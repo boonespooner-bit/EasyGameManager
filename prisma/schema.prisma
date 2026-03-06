@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  name           String?
+  email          String       @unique
+  emailVerified  DateTime?
+  image          String?
+  hashedPassword String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  accounts       Account[]
+  sessions       Session[]
+  teamMembers    TeamMember[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Team {
+  id        String       @id @default(cuid())
+  name      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  members   TeamMember[]
+  players   Player[]
+  games     Game[]
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  role   String @default("assistant_coach")
+  userId String
+  teamId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+}
+
+model Player {
+  id           String             @id @default(cuid())
+  name         String
+  teamId       String
+  battingOrder Int
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  team         Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  ratings      PlayerRating[]
+  assignments  InningAssignment[]
+}
+
+model PlayerRating {
+  id       String @id @default(cuid())
+  playerId String
+  position String
+  rating   Int
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, position])
+}
+
+model Game {
+  id        String             @id @default(cuid())
+  teamId    String
+  opponent  String
+  date      DateTime
+  isLocked  Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  team      Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  innings   InningAssignment[]
+}
+
+model InningAssignment {
+  id       String @id @default(cuid())
+  gameId   String
+  playerId String
+  inning   Int
+  position String
+  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, playerId, inning])
+}
