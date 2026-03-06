@@ -1,0 +1,250 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { POSITIONS, INNINGS, type FieldPosition } from "@/types";
+
+interface Assignment {
+  playerId: string;
+  playerName: string;
+  inning: number;
+  position: FieldPosition;
+}
+
+interface Props {
+  assignments: Assignment[];
+  battingOrder: { playerId: string; playerName: string; order: number }[];
+  opponent: string;
+  date: string;
+  teamName: string;
+  isLocked: boolean;
+  onUpdate?: (assignments: Assignment[]) => void;
+}
+
+const POSITION_COORDS: Record<string, { x: number; y: number }> = {
+  P:  { x: 50, y: 58 },
+  C:  { x: 50, y: 82 },
+  "1B": { x: 72, y: 55 },
+  "2B": { x: 62, y: 42 },
+  SS: { x: 38, y: 42 },
+  "3B": { x: 28, y: 55 },
+  LF: { x: 18, y: 25 },
+  CF: { x: 50, y: 15 },
+  RF: { x: 82, y: 25 },
+};
+
+export default function BaseballField({
+  assignments,
+  battingOrder,
+  opponent,
+  date,
+  teamName,
+  isLocked,
+  onUpdate,
+}: Props) {
+  const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
+
+  const getPlayersAtPosition = (position: string) => {
+    return INNINGS.map((inning) => {
+      const a = assignments.find((a) => a.position === position && a.inning === inning);
+      return a ? { inning, playerId: a.playerId, name: a.playerName } : null;
+    });
+  };
+
+  const getBenchByInning = () => {
+    return INNINGS.map((inning) => ({
+      inning,
+      players: assignments
+        .filter((a) => a.position === "BENCH" && a.inning === inning)
+        .map((a) => ({ playerId: a.playerId, name: a.playerName })),
+    }));
+  };
+
+  const handleDragStart = (position: string, inning: number) => {
+    if (isLocked) return;
+    setDragSource({ position, inning });
+  };
+
+  const handleDrop = useCallback(
+    (targetPosition: string, targetInning: number) => {
+      if (isLocked || !dragSource || !onUpdate) return;
+
+      const source = assignments.find(
+        (a) => a.position === dragSource.position && a.inning === dragSource.inning,
+      );
+      const target = assignments.find(
+        (a) => a.position === targetPosition && a.inning === targetInning,
+      );
+
+      if (!source || !target) {
+        setDragSource(null);
+        return;
+      }
+      if (source.playerId === target.playerId) {
+        setDragSource(null);
+        return;
+      }
+
+      // Swap the two players
+      const updated = assignments.map((a) => {
+        if (a.playerId === source.playerId && a.inning === dragSource.inning) {
+          return { ...a, position: targetPosition as FieldPosition };
+        }
+        if (a.playerId === target.playerId && a.inning === targetInning) {
+          return { ...a, position: dragSource.position as FieldPosition };
+        }
+        return a;
+      });
+
+      onUpdate(updated);
+      setDragSource(null);
+    },
+    [dragSource, assignments, isLocked, onUpdate],
+  );
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      {/* Title */}
+      <div className="text-center mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">
+          {teamName} vs. {opponent}
+        </h1>
+        <p className="text-gray-500">{new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+        {isLocked && (
+          <span className="inline-block mt-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
+            Locked (Historical)
+          </span>
+        )}
+      </div>
+
+      <div className="flex gap-6">
+        {/* Field */}
+        <div className="flex-1">
+          <div className="relative bg-green-600 rounded-2xl overflow-hidden" style={{ paddingBottom: "100%" }}>
+            {/* Infield diamond */}
+            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
+              {/* Outfield arc */}
+              <path d="M 10 50 Q 10 5, 50 5 Q 90 5, 90 50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="0.5" />
+              {/* Infield dirt */}
+              <polygon points="50,35 70,55 50,75 30,55" fill="rgba(139,90,43,0.5)" stroke="white" strokeWidth="0.3" />
+              {/* Base paths */}
+              <line x1="50" y1="75" x2="70" y2="55" stroke="white" strokeWidth="0.3" />
+              <line x1="70" y1="55" x2="50" y2="35" stroke="white" strokeWidth="0.3" />
+              <line x1="50" y1="35" x2="30" y2="55" stroke="white" strokeWidth="0.3" />
+              <line x1="30" y1="55" x2="50" y2="75" stroke="white" strokeWidth="0.3" />
+              {/* Bases */}
+              <rect x="48.5" y="73.5" width="3" height="3" fill="white" transform="rotate(45 50 75)" />
+              <rect x="68.5" y="53.5" width="3" height="3" fill="white" transform="rotate(45 70 55)" />
+              <rect x="48.5" y="33.5" width="3" height="3" fill="white" transform="rotate(45 50 35)" />
+              <rect x="28.5" y="53.5" width="3" height="3" fill="white" transform="rotate(45 30 55)" />
+              {/* Pitcher's mound */}
+              <circle cx="50" cy="55" r="1.5" fill="rgba(139,90,43,0.7)" />
+            </svg>
+
+            {/* Position boxes */}
+            {POSITIONS.map((pos) => {
+              const coord = POSITION_COORDS[pos];
+              const players = getPlayersAtPosition(pos);
+              return (
+                <div
+                  key={pos}
+                  className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${coord.x}%`, top: `${coord.y}%` }}
+                >
+                  <PositionBox
+                    position={pos}
+                    players={players}
+                    isLocked={isLocked}
+                    onDragStart={handleDragStart}
+                    onDrop={handleDrop}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Bench */}
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Bench</h3>
+            <div className="grid grid-cols-6 gap-2">
+              {getBenchByInning().map(({ inning, players }) => (
+                <div
+                  key={inning}
+                  className="bg-gray-100 border border-gray-300 rounded p-2 min-h-[80px]"
+                >
+                  <div className="text-xs font-bold text-gray-500 mb-1">Inn {inning}</div>
+                  {players.map((p) => (
+                    <div
+                      key={p.playerId}
+                      className="text-xs bg-white rounded px-1 py-0.5 mb-0.5 border truncate"
+                      draggable={!isLocked}
+                      onDragStart={() => handleDragStart("BENCH", inning)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDrop("BENCH", inning)}
+                    >
+                      {p.name}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Batting Order */}
+        <div className="w-48">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Batting Order</h3>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            {battingOrder.map((b) => (
+              <div
+                key={b.playerId}
+                className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0"
+              >
+                <span className="text-xs font-bold text-gray-400 w-4">{b.order}</span>
+                <span className="text-sm">{b.playerName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PositionBox({
+  position,
+  players,
+  isLocked,
+  onDragStart,
+  onDrop,
+}: {
+  position: string;
+  players: ({ inning: number; playerId: string; name: string } | null)[];
+  isLocked: boolean;
+  onDragStart: (pos: string, inning: number) => void;
+  onDrop: (pos: string, inning: number) => void;
+}) {
+  return (
+    <div className="bg-white/95 rounded shadow-md border border-gray-300 min-w-[90px]">
+      <div className="bg-gray-800 text-white text-xs font-bold px-2 py-0.5 text-center rounded-t">
+        {position}
+      </div>
+      <div className="p-1">
+        {players.map((p, i) => (
+          <div
+            key={i}
+            className={`flex items-center gap-1 text-[10px] px-1 py-0.5 rounded mb-0.5 ${
+              p ? "bg-blue-50 hover:bg-blue-100 cursor-grab" : "bg-gray-50"
+            }`}
+            draggable={!isLocked && !!p}
+            onDragStart={() => p && onDragStart(position, p.inning)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => onDrop(position, i + 1)}
+          >
+            <span className="font-bold text-gray-400 w-3">{i + 1}.</span>
+            <span className="truncate">{p?.name || "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
