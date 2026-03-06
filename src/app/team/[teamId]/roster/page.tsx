@@ -307,19 +307,23 @@ function PlayerForm({
           {POSITIONS.map((pos) => (
             <div key={pos} className="text-center">
               <div className="text-xs font-bold text-gray-500 mb-1">{pos}</div>
-              <input
-                type="number"
-                min={1}
-                max={9}
+              <select
                 value={ratings[pos]}
                 onChange={(e) =>
-                  setRatings({ ...ratings, [pos]: Math.min(9, Math.max(1, parseInt(e.target.value) || 1)) })
+                  setRatings({ ...ratings, [pos]: parseInt(e.target.value) })
                 }
-                className="w-full border border-gray-300 rounded px-1 py-1 text-sm text-center focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-              />
+                className="w-full border border-gray-300 rounded px-1 py-1.5 text-sm text-center focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white"
+              >
+                {[9, 8, 7, 6, 5, 4, 3, 2, 1].map((val) => (
+                  <option key={val} value={val}>
+                    {val}{val === 9 ? " ★" : val === 1 ? " ▽" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           ))}
         </div>
+        <p className="text-xs text-gray-400 mt-1">9 ★ = Best &nbsp; 1 ▽ = Worst</p>
       </div>
 
       <div className="flex gap-2">
