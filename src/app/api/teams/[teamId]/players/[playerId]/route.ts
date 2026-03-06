@@ -76,7 +76,11 @@ async function regenerateFutureGames(teamId: string) {
   const futureGames = await prisma.game.findMany({
     where: { teamId, isLocked: false },
     orderBy: { date: "asc" },
-    include: { innings: true },
+    include: {
+      innings: true,
+      exclusions: { select: { playerId: true } },
+      poolPlayers: { include: { ratings: true } },
+    },
   });
 
   const lockedGames = await prisma.game.findMany({
@@ -84,12 +88,12 @@ async function regenerateFutureGames(teamId: string) {
     include: { innings: true },
   });
 
-  const players = await prisma.player.findMany({
-    where: { teamId },
+  const rosterPlayers = await prisma.player.findMany({
+    where: { teamId, isPoolPlayer: false },
     include: { ratings: true },
   });
 
-  if (players.length === 0) return;
+  if (rosterPlayers.length === 0) return;
 
   const pastAssignments = lockedGames.map((g) =>
     g.innings.map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),
@@ -98,8 +102,15 @@ async function regenerateFutureGames(teamId: string) {
   let cumulativeHistory = pastAssignments;
 
   for (const game of futureGames) {
+    const excludedIds = new Set(game.exclusions.map((e) => e.playerId));
+    const availablePlayers = rosterPlayers.filter((p) => !excludedIds.has(p.id));
+    const gamePlayers = [
+      ...availablePlayers,
+      ...game.poolPlayers,
+    ];
+
     const seasonHistory = buildSeasonHistory(cumulativeHistory);
-    const playersWithRatings = players.map((p) => ({
+    const playersWithRatings = gamePlayers.map((p) => ({
       id: p.id,
       name: p.name,
       battingOrder: p.battingOrder,

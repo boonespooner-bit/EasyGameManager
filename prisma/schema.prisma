@@ -82,11 +82,15 @@ model Player {
   name         String
   teamId       String
   battingOrder Int
+  isPoolPlayer Boolean            @default(false)
+  poolGameId   String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   team         Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
   ratings      PlayerRating[]
   assignments  InningAssignment[]
+  poolGame     Game?              @relation("PoolPlayers", fields: [poolGameId], references: [id], onDelete: Cascade)
+  exclusions   GameExclusion[]
 }
 
 model PlayerRating {
@@ -100,15 +104,27 @@ model PlayerRating {
 }
 
 model Game {
-  id        String             @id @default(cuid())
-  teamId    String
-  opponent  String
-  date      DateTime
-  isLocked  Boolean            @default(false)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  team      Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  innings   InningAssignment[]
+  id          String             @id @default(cuid())
+  teamId      String
+  opponent    String
+  date        DateTime
+  isLocked    Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  team        Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  innings     InningAssignment[]
+  poolPlayers Player[]           @relation("PoolPlayers")
+  exclusions  GameExclusion[]
+}
+
+model GameExclusion {
+  id       String @id @default(cuid())
+  gameId   String
+  playerId String
+  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, playerId])
 }
 
 model InningAssignment {
