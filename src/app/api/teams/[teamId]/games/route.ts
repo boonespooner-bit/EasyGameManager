@@ -41,7 +41,7 @@ export async function POST(
 
   // Get roster players (non-pool players)
   const allPlayers = await prisma.player.findMany({
-    where: { teamId, isPoolPlayer: false },
+    where: { teamId, NOT: { isPoolPlayer: true } },
     include: { ratings: true },
   });
 

@@ -89,7 +89,7 @@ async function regenerateFutureGames(teamId: string) {
   });
 
   const rosterPlayers = await prisma.player.findMany({
-    where: { teamId, isPoolPlayer: false },
+    where: { teamId, NOT: { isPoolPlayer: true } },
     include: { ratings: true },
   });
 
