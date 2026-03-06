@@ -339,13 +339,18 @@ function assignBenchScheduleFlexible(
     playerBenchCount[p.id] = 0;
   });
 
-  const inningOrder = [1, 2, 5, 6, 3, 4];
-  for (const inning of inningOrder) {
+  // Assign bench in sequential inning order so we can enforce the
+  // "no consecutive bench innings" rule
+  for (const inning of INNINGS) {
     const slots = benchSlots.get(inning)!;
     while (slots.length < benchPerInning) {
+      const prevBenched = inning > 1 ? (benchSlots.get(inning - 1) || []) : [];
+
       const eligible = allBenchPlayers
         .filter((p) => playerBenchCount[p.id] < p.target)
         .filter((p) => !slots.includes(p.id))
+        // No consecutive bench innings: skip players benched in the previous inning
+        .filter((p) => !prevBenched.includes(p.id))
         .sort((a, b) => {
           const importance = inningImportance(inning);
           const aRating = playerAvgRating.get(a.id) || 5;
@@ -356,7 +361,27 @@ function assignBenchScheduleFlexible(
           return bRating - aRating;
         });
 
-      if (eligible.length === 0) break;
+      if (eligible.length === 0) {
+        // If we can't fill without violating consecutive rule, relax the constraint
+        const fallback = allBenchPlayers
+          .filter((p) => playerBenchCount[p.id] < p.target)
+          .filter((p) => !slots.includes(p.id))
+          .sort((a, b) => {
+            const importance = inningImportance(inning);
+            const aRating = playerAvgRating.get(a.id) || 5;
+            const bRating = playerAvgRating.get(b.id) || 5;
+            if (importance > 1) {
+              return aRating - bRating;
+            }
+            return bRating - aRating;
+          });
+        if (fallback.length === 0) break;
+        const chosen = fallback[0];
+        slots.push(chosen.id);
+        playerBenchCount[chosen.id]++;
+        continue;
+      }
+
       const chosen = eligible[0];
       slots.push(chosen.id);
       playerBenchCount[chosen.id]++;
