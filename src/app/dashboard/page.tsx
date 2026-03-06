@@ -19,16 +19,25 @@ export default function DashboardPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [teamName, setTeamName] = useState("");
 
+  const fetchTeams = () => {
+    fetch("/api/teams")
+      .then((r) => r.json())
+      .then((data) => { setTeams(data); setLoading(false); });
+  };
+
+  const deleteTeam = async (teamId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this team? This will delete all players and games.")) return;
+    const res = await fetch(`/api/teams/${teamId}`, { method: "DELETE" });
+    if (res.ok) fetchTeams();
+  };
+
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
   }, [status, router]);
 
   useEffect(() => {
-    if (status === "authenticated") {
-      fetch("/api/teams")
-        .then((r) => r.json())
-        .then((data) => { setTeams(data); setLoading(false); });
-    }
+    if (status === "authenticated") fetchTeams();
   }, [status]);
 
   const createTeam = async () => {
@@ -100,13 +109,21 @@ export default function DashboardPage() {
             <div
               key={team.id}
               onClick={() => router.push(`/team/${team.id}/roster`)}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 hover:shadow-md transition-shadow cursor-pointer"
+              className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"
             >
-              <h2 className="text-lg font-semibold text-gray-900">{team.name}</h2>
-              <div className="flex gap-4 mt-2 text-sm text-gray-500">
-                <span>{team.players.length}/12 players</span>
-                <span>{team._count.games} games</span>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">{team.name}</h2>
+                <div className="flex gap-4 mt-2 text-sm text-gray-500">
+                  <span>{team.players.length} players</span>
+                  <span>{team._count.games} games</span>
+                </div>
               </div>
+              <button
+                onClick={(e) => deleteTeam(team.id, e)}
+                className="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1"
+              >
+                Delete
+              </button>
             </div>
           ))}
         </div>

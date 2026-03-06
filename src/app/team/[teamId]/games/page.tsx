@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
 interface Game {
@@ -29,25 +29,33 @@ export default function GamesPage() {
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchData = useCallback(() => {
+    Promise.all([
+      fetch(`/api/teams/${teamId}`).then((r) => r.json()),
+      fetch(`/api/teams/${teamId}/games`).then((r) => r.json()),
+    ]).then(([teamData, gamesData]) => {
+      setTeam(teamData);
+      setGames(gamesData);
+      setLoading(false);
+    });
+  }, [teamId]);
+
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
-    if (status === "authenticated") {
-      Promise.all([
-        fetch(`/api/teams/${teamId}`).then((r) => r.json()),
-        fetch(`/api/teams/${teamId}/games`).then((r) => r.json()),
-      ]).then(([teamData, gamesData]) => {
-        setTeam(teamData);
-        setGames(gamesData);
-        setLoading(false);
-      });
-    }
-  }, [status, router, teamId]);
+    if (status === "authenticated") fetchData();
+  }, [status, router, fetchData]);
+
+  const deleteGame = async (gameId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this game?")) return;
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}`, { method: "DELETE" });
+    if (res.ok) fetchData();
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
-
-  const canCreateGame = team && team.players.length === 12;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -58,16 +66,12 @@ export default function GamesPage() {
             Back to Roster
           </Link>
         </div>
-        {canCreateGame ? (
-          <Link
-            href={`/team/${teamId}/games/new`}
-            className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
-          >
-            + New Game
-          </Link>
-        ) : (
-          <span className="text-sm text-gray-400">Need 12 players to create games</span>
-        )}
+        <Link
+          href={`/team/${teamId}/games/new`}
+          className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
+        >
+          + Create New Game
+        </Link>
       </div>
 
       {games.length === 0 ? (
@@ -97,10 +101,16 @@ export default function GamesPage() {
                   })}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 {game.isLocked && (
                   <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Locked</span>
                 )}
+                <button
+                  onClick={(e) => deleteGame(game.id, e)}
+                  className="text-red-500 hover:text-red-700 text-sm font-medium"
+                >
+                  Delete
+                </button>
                 <span className="text-gray-400 text-lg">&rarr;</span>
               </div>
             </Link>
