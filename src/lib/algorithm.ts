@@ -12,54 +12,62 @@ export function generateGamePlan(
   players: PlayerWithRatings[],
   seasonHistory: SeasonHistory[],
 ): GameAssignment[] {
-  if (players.length !== 12) {
-    throw new Error("Exactly 12 players are required");
+  if (players.length === 0) {
+    return [];
   }
 
   const historyMap = new Map(seasonHistory.map((h) => [h.playerId, h]));
+  const numPlayers = players.length;
+  const numPositions = POSITIONS.length; // 9
 
   // Step 1: Determine bench schedule
-  // 6 innings × 3 bench spots = 18 bench-innings
-  // 12 players: 6 sit 2 innings, 6 sit 1 inning
-  const benchSchedule = assignBenchSchedule(players, historyMap);
-
-  // Step 2: For each inning, assign active players to positions
+  // Only assign bench if we have more than 9 players (more players than positions)
   const assignments: GameAssignment[] = [];
   const gamePositionCounts: Record<string, Record<string, number>> = {};
   players.forEach((p) => {
     gamePositionCounts[p.id] = {};
   });
 
-  for (const inning of INNINGS) {
-    const benchedPlayerIds = benchSchedule.get(inning) || [];
+  if (numPlayers > numPositions) {
+    // We have extra players that need to bench each inning
+    const benchPerInning = numPlayers - numPositions;
+    const benchSchedule = assignBenchScheduleFlexible(players, historyMap, benchPerInning);
 
-    // Add bench assignments
-    for (const playerId of benchedPlayerIds) {
-      const player = players.find((p) => p.id === playerId)!;
-      assignments.push({
-        playerId: player.id,
-        playerName: player.name,
-        inning,
-        position: "BENCH",
-      });
+    for (const inning of INNINGS) {
+      const benchedPlayerIds = benchSchedule.get(inning) || [];
+
+      for (const playerId of benchedPlayerIds) {
+        const player = players.find((p) => p.id === playerId)!;
+        assignments.push({
+          playerId: player.id,
+          playerName: player.name,
+          inning,
+          position: "BENCH",
+        });
+      }
+
+      const activePlayers = players.filter((p) => !benchedPlayerIds.includes(p.id));
+      const inningAssignments = assignPositions(activePlayers, inning, historyMap, gamePositionCounts);
+
+      for (const a of inningAssignments) {
+        assignments.push(a);
+        const pos = a.position;
+        if (pos !== "BENCH") {
+          gamePositionCounts[a.playerId][pos] = (gamePositionCounts[a.playerId][pos] || 0) + 1;
+        }
+      }
     }
+  } else {
+    // 9 or fewer players: everyone plays every inning, no bench
+    for (const inning of INNINGS) {
+      const inningAssignments = assignPositions(players, inning, historyMap, gamePositionCounts);
 
-    // Active players for this inning
-    const activePlayers = players.filter((p) => !benchedPlayerIds.includes(p.id));
-
-    // Assign positions using scoring
-    const inningAssignments = assignPositions(
-      activePlayers,
-      inning,
-      historyMap,
-      gamePositionCounts,
-    );
-
-    for (const a of inningAssignments) {
-      assignments.push(a);
-      const pos = a.position;
-      if (pos !== "BENCH") {
-        gamePositionCounts[a.playerId][pos] = (gamePositionCounts[a.playerId][pos] || 0) + 1;
+      for (const a of inningAssignments) {
+        assignments.push(a);
+        const pos = a.position;
+        if (pos !== "BENCH") {
+          gamePositionCounts[a.playerId][pos] = (gamePositionCounts[a.playerId][pos] || 0) + 1;
+        }
       }
     }
   }
@@ -67,37 +75,37 @@ export function generateGamePlan(
   return assignments;
 }
 
-function assignBenchSchedule(
+function assignBenchScheduleFlexible(
   players: PlayerWithRatings[],
   historyMap: Map<string, SeasonHistory>,
+  benchPerInning: number,
 ): Map<number, string[]> {
-  // Sort players by total bench innings in season (most bench time first = sit less this game)
+  // Total bench slots across all innings
+  const totalBenchSlots = benchPerInning * INNINGS.length;
+
+  // Sort players by total bench innings in season (those who sat less should sit more)
   const sorted = [...players].sort((a, b) => {
-    const aHist = historyMap.get(a.id);
-    const bHist = historyMap.get(b.id);
-    const aBench = aHist?.totalBenchInnings ?? 0;
-    const bBench = bHist?.totalBenchInnings ?? 0;
-    return aBench - bBench; // those who sat less should sit more this game
+    const aBench = historyMap.get(a.id)?.totalBenchInnings ?? 0;
+    const bBench = historyMap.get(b.id)?.totalBenchInnings ?? 0;
+    return aBench - bBench;
   });
 
-  // First 6 players (least bench time) sit 2 innings, next 6 sit 1 inning
-  const sitTwo = sorted.slice(0, 6).map((p) => p.id);
-  const sitOne = sorted.slice(6).map((p) => p.id);
+  // Distribute bench innings fairly: each player gets floor or ceil of average
+  const avgBench = totalBenchSlots / players.length;
+  const baseBench = Math.floor(avgBench);
+  let extraSlots = totalBenchSlots - baseBench * players.length;
 
-  // Distribute across innings
-  // Try to avoid benching best players in important innings (1,2,5,6)
+  const allBenchPlayers = sorted.map((p) => {
+    const target = baseBench + (extraSlots > 0 ? 1 : 0);
+    if (extraSlots > 0) extraSlots--;
+    return { id: p.id, target };
+  });
+
   const benchSlots: Map<number, string[]> = new Map();
   for (const inning of INNINGS) {
     benchSlots.set(inning, []);
   }
 
-  const playerBenchCount: Record<string, number> = {};
-  const allBenchPlayers = [
-    ...sitTwo.map((id) => ({ id, target: 2 })),
-    ...sitOne.map((id) => ({ id, target: 1 })),
-  ];
-
-  // Sort so weaker overall players bench during important innings
   const playerAvgRating = new Map<string, number>();
   for (const p of players) {
     const avg = p.ratings.length > 0
@@ -106,28 +114,27 @@ function assignBenchSchedule(
     playerAvgRating.set(p.id, avg);
   }
 
+  const playerBenchCount: Record<string, number> = {};
   allBenchPlayers.forEach((p) => {
     playerBenchCount[p.id] = 0;
   });
 
   // Assign bench slots: prefer benching weaker players in important innings
-  const inningOrder = [1, 2, 5, 6, 3, 4]; // important innings first
+  const inningOrder = [1, 2, 5, 6, 3, 4];
   for (const inning of inningOrder) {
     const slots = benchSlots.get(inning)!;
-    while (slots.length < 3) {
-      // Find eligible player (hasn't reached target bench count)
+    while (slots.length < benchPerInning) {
       const eligible = allBenchPlayers
         .filter((p) => playerBenchCount[p.id] < p.target)
         .filter((p) => !slots.includes(p.id))
         .sort((a, b) => {
-          // In important innings, bench weaker players first
           const importance = inningImportance(inning);
           const aRating = playerAvgRating.get(a.id) || 5;
           const bRating = playerAvgRating.get(b.id) || 5;
           if (importance > 1) {
-            return aRating - bRating; // weaker first for important innings
+            return aRating - bRating;
           }
-          return bRating - aRating; // stronger first for easy innings (save them)
+          return bRating - aRating;
         });
 
       if (eligible.length === 0) break;

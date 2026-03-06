@@ -89,7 +89,7 @@ async function regenerateFutureGames(teamId: string) {
     include: { ratings: true },
   });
 
-  if (players.length !== 12) return;
+  if (players.length === 0) return;
 
   const pastAssignments = lockedGames.map((g) =>
     g.innings.map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),

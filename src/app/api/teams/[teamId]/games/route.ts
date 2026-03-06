@@ -45,9 +45,9 @@ export async function POST(
     include: { ratings: true },
   });
 
-  if (players.length !== 12) {
+  if (players.length === 0) {
     return NextResponse.json(
-      { error: "Team must have exactly 12 players before creating a game" },
+      { error: "Team must have at least one player before creating a game" },
       { status: 400 },
     );
   }
