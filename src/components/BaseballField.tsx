@@ -42,6 +42,7 @@ export default function BaseballField({
   onUpdate,
 }: Props) {
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const getPlayersAtPosition = (position: string) => {
     return INNINGS.map((inning) => {
@@ -62,6 +63,7 @@ export default function BaseballField({
   const handleDragStart = (position: string, inning: number) => {
     if (isLocked) return;
     setDragSource({ position, inning });
+    setError(null);
   };
 
   const handleDrop = useCallback(
@@ -75,27 +77,70 @@ export default function BaseballField({
         (a) => a.position === targetPosition && a.inning === targetInning,
       );
 
-      if (!source || !target) {
-        setDragSource(null);
-        return;
-      }
-      if (source.playerId === target.playerId) {
+      if (!source) {
         setDragSource(null);
         return;
       }
 
-      // Swap the two players
-      const updated = assignments.map((a) => {
-        if (a.playerId === source.playerId && a.inning === dragSource.inning) {
-          return { ...a, position: targetPosition as FieldPosition };
-        }
-        if (a.playerId === target.playerId && a.inning === targetInning) {
-          return { ...a, position: dragSource.position as FieldPosition };
-        }
-        return a;
-      });
+      // Same spot — ignore
+      if (dragSource.position === targetPosition && dragSource.inning === targetInning) {
+        setDragSource(null);
+        return;
+      }
 
-      onUpdate(updated);
+      // Check if the source player is already assigned to a DIFFERENT position in the TARGET inning
+      if (dragSource.inning !== targetInning) {
+        const playerInTargetInning = assignments.find(
+          (a) => a.playerId === source.playerId && a.inning === targetInning,
+        );
+        if (playerInTargetInning) {
+          setError(
+            `${source.playerName} is already assigned to ${playerInTargetInning.position} in inning ${targetInning}. Remove them from that position first.`,
+          );
+          setDragSource(null);
+          return;
+        }
+      }
+
+      // If swapping across innings, also check target player isn't already in source inning
+      if (target && dragSource.inning !== targetInning) {
+        const targetPlayerInSourceInning = assignments.find(
+          (a) => a.playerId === target.playerId && a.inning === dragSource.inning,
+        );
+        if (targetPlayerInSourceInning) {
+          setError(
+            `${target.playerName} is already assigned to ${targetPlayerInSourceInning.position} in inning ${dragSource.inning}. Cannot swap across innings.`,
+          );
+          setDragSource(null);
+          return;
+        }
+      }
+
+      setError(null);
+
+      if (target) {
+        // Swap the two players
+        const updated = assignments.map((a) => {
+          if (a === source) {
+            return { ...a, position: targetPosition as FieldPosition, inning: targetInning };
+          }
+          if (a === target) {
+            return { ...a, position: dragSource.position as FieldPosition, inning: dragSource.inning };
+          }
+          return a;
+        });
+        onUpdate(updated);
+      } else {
+        // Move to empty slot
+        const updated = assignments.map((a) => {
+          if (a === source) {
+            return { ...a, position: targetPosition as FieldPosition, inning: targetInning };
+          }
+          return a;
+        });
+        onUpdate(updated);
+      }
+
       setDragSource(null);
     },
     [dragSource, assignments, isLocked, onUpdate],
@@ -115,6 +160,18 @@ export default function BaseballField({
           </span>
         )}
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2 rounded-lg mb-4 text-sm flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 font-bold ml-4">&times;</button>
+        </div>
+      )}
+
+      {!isLocked && (
+        <p className="text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
+      )}
 
       <div className="flex gap-6">
         {/* Field */}
@@ -156,6 +213,7 @@ export default function BaseballField({
                     isLocked={isLocked}
                     onDragStart={handleDragStart}
                     onDrop={handleDrop}
+                    isDragging={!!dragSource}
                   />
                 </div>
               );
@@ -170,16 +228,18 @@ export default function BaseballField({
                 <div
                   key={inning}
                   className="bg-gray-100 border border-gray-300 rounded p-2 min-h-[80px]"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDrop("BENCH", inning)}
                 >
                   <div className="text-xs font-bold text-gray-500 mb-1">Inn {inning}</div>
                   {players.map((p) => (
                     <div
                       key={p.playerId}
-                      className="text-xs bg-white rounded px-1 py-0.5 mb-0.5 border truncate"
+                      className="text-xs bg-white rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing"
                       draggable={!isLocked}
                       onDragStart={() => handleDragStart("BENCH", inning)}
                       onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => handleDrop("BENCH", inning)}
+                      onDrop={(e) => { e.stopPropagation(); handleDrop("BENCH", inning); }}
                     >
                       {p.name}
                     </div>
@@ -216,12 +276,14 @@ function PositionBox({
   isLocked,
   onDragStart,
   onDrop,
+  isDragging,
 }: {
   position: string;
   players: ({ inning: number; playerId: string; name: string } | null)[];
   isLocked: boolean;
   onDragStart: (pos: string, inning: number) => void;
   onDrop: (pos: string, inning: number) => void;
+  isDragging: boolean;
 }) {
   return (
     <div className="bg-white/95 rounded shadow-md border border-gray-300 min-w-[90px]">
@@ -232,16 +294,16 @@ function PositionBox({
         {players.map((p, i) => (
           <div
             key={i}
-            className={`flex items-center gap-1 text-[10px] px-1 py-0.5 rounded mb-0.5 ${
-              p ? "bg-blue-50 hover:bg-blue-100 cursor-grab" : "bg-gray-50"
-            }`}
+            className={`flex items-center gap-1 text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
+              p ? "bg-blue-50 hover:bg-blue-100 cursor-grab active:cursor-grabbing" : "bg-gray-50"
+            } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
             draggable={!isLocked && !!p}
             onDragStart={() => p && onDragStart(position, p.inning)}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={() => onDrop(position, i + 1)}
+            onDrop={(e) => { e.stopPropagation(); onDrop(position, i + 1); }}
           >
             <span className="font-bold text-gray-400 w-3">{i + 1}.</span>
-            <span className="truncate">{p?.name || "—"}</span>
+            <span className="truncate">{p?.name || "\u2014"}</span>
           </div>
         ))}
       </div>
