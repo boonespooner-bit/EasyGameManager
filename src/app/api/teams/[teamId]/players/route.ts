@@ -4,6 +4,23 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { POSITIONS } from "@/types";
 
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ teamId: string }> },
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { teamId } = await params;
+  const players = await prisma.player.findMany({
+    where: { teamId, isPoolPlayer: false },
+    orderBy: { battingOrder: "asc" },
+    select: { id: true, name: true, battingOrder: true },
+  });
+
+  return NextResponse.json(players);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> },

@@ -37,13 +37,44 @@ export async function POST(
     return NextResponse.json({ error: "No permission" }, { status: 403 });
   }
 
-  const { opponent, date } = await req.json();
+  const { opponent, date, excludedPlayerIds = [], poolPlayers = [] } = await req.json();
 
-  // Get players
-  const players = await prisma.player.findMany({
-    where: { teamId },
+  // Get roster players (non-pool players)
+  const allPlayers = await prisma.player.findMany({
+    where: { teamId, isPoolPlayer: false },
     include: { ratings: true },
   });
+
+  // Filter out excluded players
+  const excludedSet = new Set(excludedPlayerIds as string[]);
+  const availablePlayers = allPlayers.filter((p) => !excludedSet.has(p.id));
+
+  // Create pool players for this game
+  const createdPoolPlayers: typeof allPlayers = [];
+  for (const pp of poolPlayers as { name: string; ratings: Record<string, number> }[]) {
+    const maxOrder = allPlayers.length > 0
+      ? Math.max(...allPlayers.map((p) => p.battingOrder))
+      : 0;
+
+    const poolPlayer = await prisma.player.create({
+      data: {
+        name: pp.name,
+        teamId,
+        battingOrder: maxOrder + 1 + createdPoolPlayers.length,
+        isPoolPlayer: true,
+        ratings: {
+          create: Object.entries(pp.ratings).map(([position, rating]) => ({
+            position,
+            rating: rating as number,
+          })),
+        },
+      },
+      include: { ratings: true },
+    });
+    createdPoolPlayers.push(poolPlayer);
+  }
+
+  const gamePlayers = [...availablePlayers, ...createdPoolPlayers];
 
   // Get past games for season history
   const pastGames = await prisma.game.findMany({
@@ -57,7 +88,7 @@ export async function POST(
 
   const seasonHistory = buildSeasonHistory(pastAssignments);
 
-  const playersWithRatings = players.map((p) => ({
+  const playersWithRatings = gamePlayers.map((p) => ({
     id: p.id,
     name: p.name,
     battingOrder: p.battingOrder,
@@ -78,9 +109,22 @@ export async function POST(
           position: a.position,
         })),
       },
+      exclusions: {
+        create: (excludedPlayerIds as string[]).map((playerId: string) => ({
+          playerId,
+        })),
+      },
     },
     include: { innings: { include: { player: true } } },
   });
+
+  // Link pool players to this game
+  if (createdPoolPlayers.length > 0) {
+    await prisma.player.updateMany({
+      where: { id: { in: createdPoolPlayers.map((p) => p.id) } },
+      data: { poolGameId: game.id },
+    });
+  }
 
   return NextResponse.json(game, { status: 201 });
 }

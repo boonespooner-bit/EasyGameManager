@@ -26,6 +26,7 @@ interface GameData {
       id: string;
       name: string;
       battingOrder: number;
+      isPoolPlayer?: boolean;
       ratings: { position: string; rating: number }[];
     }[];
   };
@@ -35,6 +36,8 @@ interface GameData {
     position: string;
     player: { name: string };
   }[];
+  exclusions?: { playerId: string }[];
+  poolPlayers?: { id: string; name: string }[];
 }
 
 export default function GamePlanPage() {
@@ -103,11 +106,17 @@ export default function GamePlanPage() {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
 
+  const excludedPlayerIds = new Set((game.exclusions || []).map((e) => e.playerId));
+  const activePlayerIds = new Set(
+    assignments.map((a) => a.playerId),
+  );
+
   const battingOrder = game.team.players
+    .filter((p) => !excludedPlayerIds.has(p.id) || activePlayerIds.has(p.id))
     .sort((a, b) => a.battingOrder - b.battingOrder)
     .map((p) => ({
       playerId: p.id,
-      playerName: p.name,
+      playerName: p.isPoolPlayer ? `${p.name} (pool)` : p.name,
       order: p.battingOrder,
     }));
 
@@ -134,6 +143,24 @@ export default function GamePlanPage() {
           </button>
         </div>
       </div>
+
+      {((game.exclusions && game.exclusions.length > 0) || (game.poolPlayers && game.poolPlayers.length > 0)) && (
+        <div className="flex flex-wrap gap-2 mb-3 text-xs">
+          {game.exclusions && game.exclusions.length > 0 && (
+            <span className="bg-red-50 text-red-700 px-2 py-1 rounded">
+              Absent: {game.exclusions.map((e) => {
+                const player = game!.team.players.find((p) => p.id === e.playerId);
+                return player?.name || "Unknown";
+              }).join(", ")}
+            </span>
+          )}
+          {game.poolPlayers && game.poolPlayers.length > 0 && (
+            <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded">
+              Pool: {game.poolPlayers.map((p) => p.name).join(", ")}
+            </span>
+          )}
+        </div>
+      )}
 
       <BaseballField
         assignments={assignments}

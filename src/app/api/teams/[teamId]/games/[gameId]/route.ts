@@ -21,9 +21,15 @@ export async function GET(
       },
       team: {
         include: {
-          players: { include: { ratings: true }, orderBy: { battingOrder: "asc" } },
+          players: {
+            where: { OR: [{ isPoolPlayer: false }, { poolGameId: gameId }] },
+            include: { ratings: true },
+            orderBy: { battingOrder: "asc" },
+          },
         },
       },
+      exclusions: { select: { playerId: true } },
+      poolPlayers: { select: { id: true, name: true } },
     },
   });
 

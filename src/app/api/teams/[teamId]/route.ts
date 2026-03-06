@@ -21,7 +21,11 @@ export async function GET(
   const team = await prisma.team.findUnique({
     where: { id: teamId },
     include: {
-      players: { include: { ratings: true }, orderBy: { battingOrder: "asc" } },
+      players: {
+        where: { isPoolPlayer: false },
+        include: { ratings: true },
+        orderBy: { battingOrder: "asc" },
+      },
       members: { include: { user: { select: { id: true, name: true, email: true } } } },
       games: { orderBy: { date: "desc" } },
     },
