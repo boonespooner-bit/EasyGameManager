@@ -143,12 +143,24 @@ export default function RosterPage() {
                           );
                         })}
                         <td className="text-center px-4 py-3">
-                          <button
-                            onClick={() => setEditingPlayer(player.id)}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                          >
-                            Edit
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => setEditingPlayer(player.id)}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Delete ${player.name}?`)) return;
+                                const res = await fetch(`/api/teams/${teamId}/players/${player.id}`, { method: "DELETE" });
+                                if (res.ok) fetchTeam();
+                              }}
+                              className="text-red-500 hover:text-red-700 text-sm font-medium"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </>
                     )}

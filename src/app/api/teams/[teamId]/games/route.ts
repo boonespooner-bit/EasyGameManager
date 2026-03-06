@@ -45,13 +45,6 @@ export async function POST(
     include: { ratings: true },
   });
 
-  if (players.length === 0) {
-    return NextResponse.json(
-      { error: "Team must have at least one player before creating a game" },
-      { status: 400 },
-    );
-  }
-
   // Get past games for season history
   const pastGames = await prisma.game.findMany({
     where: { teamId, isLocked: true },

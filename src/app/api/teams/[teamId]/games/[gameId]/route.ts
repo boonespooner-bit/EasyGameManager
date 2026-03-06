@@ -57,3 +57,23 @@ export async function PUT(
 
   return NextResponse.json(game);
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ teamId: string; gameId: string }> },
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { teamId, gameId } = await params;
+  const userId = (session.user as { id: string }).id;
+  const member = await prisma.teamMember.findUnique({
+    where: { userId_teamId: { userId, teamId } },
+  });
+  if (!member || member.role === "viewer") {
+    return NextResponse.json({ error: "No permission" }, { status: 403 });
+  }
+
+  await prisma.game.delete({ where: { id: gameId } });
+  return NextResponse.json({ success: true });
+}
