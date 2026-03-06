@@ -1,6 +1,6 @@
 import { POSITIONS, INNINGS, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position } from "@/types";
 
-const POSITION_PRIORITY: Position[] = ["P", "C", "SS", "3B", "2B", "1B", "CF", "LF", "RF"];
+const POSITION_PRIORITY: Position[] = ["SS", "3B", "2B", "1B", "CF", "LF", "RF"];
 
 // Innings 1-2 and 5-6 face the best hitters; innings 3-4 face the weakest
 function inningImportance(inning: number): number {
@@ -20,54 +20,123 @@ export function generateGamePlan(
   const numPlayers = players.length;
   const numPositions = POSITIONS.length; // 9
 
-  // Step 1: Determine bench schedule
-  // Only assign bench if we have more than 9 players (more players than positions)
   const assignments: GameAssignment[] = [];
   const gamePositionCounts: Record<string, Record<string, number>> = {};
   players.forEach((p) => {
     gamePositionCounts[p.id] = {};
   });
 
+  // Pre-assign who is benched each inning (if more than 9 players)
+  let benchSchedule: Map<number, string[]> = new Map();
+  for (const inning of INNINGS) {
+    benchSchedule.set(inning, []);
+  }
+
   if (numPlayers > numPositions) {
-    // We have extra players that need to bench each inning
     const benchPerInning = numPlayers - numPositions;
-    const benchSchedule = assignBenchScheduleFlexible(players, historyMap, benchPerInning);
+    benchSchedule = assignBenchScheduleFlexible(players, historyMap, benchPerInning);
+  }
 
-    for (const inning of INNINGS) {
-      const benchedPlayerIds = benchSchedule.get(inning) || [];
-
-      for (const playerId of benchedPlayerIds) {
-        const player = players.find((p) => p.id === playerId)!;
-        assignments.push({
-          playerId: player.id,
-          playerName: player.name,
-          inning,
-          position: "BENCH",
-        });
-      }
-
-      const activePlayers = players.filter((p) => !benchedPlayerIds.includes(p.id));
-      const inningAssignments = assignPositions(activePlayers, inning, historyMap, gamePositionCounts);
-
-      for (const a of inningAssignments) {
-        assignments.push(a);
-        const pos = a.position;
-        if (pos !== "BENCH") {
-          gamePositionCounts[a.playerId][pos] = (gamePositionCounts[a.playerId][pos] || 0) + 1;
-        }
-      }
+  // Add bench assignments
+  for (const inning of INNINGS) {
+    const benchedPlayerIds = benchSchedule.get(inning) || [];
+    for (const playerId of benchedPlayerIds) {
+      const player = players.find((p) => p.id === playerId)!;
+      assignments.push({
+        playerId: player.id,
+        playerName: player.name,
+        inning,
+        position: "BENCH",
+      });
     }
-  } else {
-    // 9 or fewer players: everyone plays every inning, no bench
-    for (const inning of INNINGS) {
-      const inningAssignments = assignPositions(players, inning, historyMap, gamePositionCounts);
+  }
 
-      for (const a of inningAssignments) {
-        assignments.push(a);
-        const pos = a.position;
-        if (pos !== "BENCH") {
-          gamePositionCounts[a.playerId][pos] = (gamePositionCounts[a.playerId][pos] || 0) + 1;
+  // Build active players per inning
+  const activeByInning = new Map<number, PlayerWithRatings[]>();
+  for (const inning of INNINGS) {
+    const benchedIds = benchSchedule.get(inning) || [];
+    activeByInning.set(inning, players.filter((p) => !benchedIds.includes(p.id)));
+  }
+
+  // Phase 1: Pre-plan pitching schedule across all innings
+  // Rule: A pitcher can pitch 1 inning or 2 consecutive innings, max 2
+  const pitchingSchedule = planPitchingSchedule(players, activeByInning, historyMap);
+
+  // Phase 2: Pre-plan catching schedule across all innings
+  // Preference: catchers should catch 2 consecutive innings when possible
+  const catchingSchedule = planCatchingSchedule(players, activeByInning, pitchingSchedule, historyMap);
+
+  // Phase 3: Assign remaining positions inning by inning
+  // Lock in pitcher and catcher assignments first
+  const lockedAssignments = new Map<number, Map<string, string>>(); // inning -> playerId -> position
+  for (const inning of INNINGS) {
+    lockedAssignments.set(inning, new Map());
+  }
+
+  for (const { playerId, inning } of pitchingSchedule) {
+    lockedAssignments.get(inning)!.set(playerId, "P");
+  }
+  for (const { playerId, inning } of catchingSchedule) {
+    lockedAssignments.get(inning)!.set(playerId, "C");
+  }
+
+  // Now assign remaining field positions for each inning
+  for (const inning of INNINGS) {
+    const active = activeByInning.get(inning) || [];
+    const locked = lockedAssignments.get(inning)!;
+
+    // Add locked (pitcher/catcher) assignments
+    for (const [playerId, position] of locked) {
+      const player = players.find((p) => p.id === playerId)!;
+      assignments.push({
+        playerId: player.id,
+        playerName: player.name,
+        inning,
+        position: position as Position,
+      });
+      gamePositionCounts[player.id][position] = (gamePositionCounts[player.id][position] || 0) + 1;
+    }
+
+    // Assign remaining positions to remaining active players
+    const assignedPlayers = new Set(locked.keys());
+    const importance = inningImportance(inning);
+
+    for (const position of POSITION_PRIORITY) {
+      let bestScore = -Infinity;
+      let bestPlayer: PlayerWithRatings | null = null;
+
+      for (const player of active) {
+        if (assignedPlayers.has(player.id)) continue;
+
+        const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+        const history = historyMap.get(player.id);
+
+        let score = rating * importance;
+
+        const seasonCount = history?.positionCounts[position] ?? 0;
+        const gameCount = gamePositionCounts[player.id][position] ?? 0;
+        score -= seasonCount * 0.3;
+        score -= gameCount * 3;
+
+        if (importance < 1 && rating < 5) {
+          score += 1;
         }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPlayer = player;
+        }
+      }
+
+      if (bestPlayer) {
+        assignments.push({
+          playerId: bestPlayer.id,
+          playerName: bestPlayer.name,
+          inning,
+          position,
+        });
+        assignedPlayers.add(bestPlayer.id);
+        gamePositionCounts[bestPlayer.id][position] = (gamePositionCounts[bestPlayer.id][position] || 0) + 1;
       }
     }
   }
@@ -75,22 +144,173 @@ export function generateGamePlan(
   return assignments;
 }
 
+/**
+ * Plan pitching across 6 innings.
+ * Rules:
+ * - Each pitcher pitches 1 or 2 innings
+ * - If 2 innings, they must be consecutive
+ * - Try to use 3 pitchers x 2 innings for ideal coverage
+ */
+function planPitchingSchedule(
+  players: PlayerWithRatings[],
+  activeByInning: Map<number, PlayerWithRatings[]>,
+  historyMap: Map<string, SeasonHistory>,
+): { playerId: string; inning: number }[] {
+  const schedule: { playerId: string; inning: number }[] = [];
+  const innings = [...INNINGS]; // [1,2,3,4,5,6]
+  const usedPitchers = new Set<string>();
+
+  // Score each player for pitching
+  const pitchScores = players.map((p) => {
+    const rating = p.ratings.find((r) => r.position === "P")?.rating ?? 1;
+    const history = historyMap.get(p.id);
+    let score = rating;
+    // Bonus for players who haven't pitched this season
+    if (history && !history.hasPitched) score += 2;
+    return { player: p, score };
+  }).sort((a, b) => b.score - a.score);
+
+  // Greedily fill innings in consecutive blocks of 2, then 1
+  let i = 0;
+  while (i < innings.length) {
+    const inning = innings[i];
+    const nextInning = i + 1 < innings.length ? innings[i + 1] : null;
+
+    // Find best available pitcher who is active in these innings
+    let assigned = false;
+
+    // Try to assign a 2-inning block first
+    if (nextInning !== null) {
+      for (const { player } of pitchScores) {
+        if (usedPitchers.has(player.id)) continue;
+        const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);
+        const activeInNext = (activeByInning.get(nextInning) || []).some((p) => p.id === player.id);
+        if (activeInCurrent && activeInNext) {
+          schedule.push({ playerId: player.id, inning });
+          schedule.push({ playerId: player.id, inning: nextInning });
+          usedPitchers.add(player.id);
+          i += 2;
+          assigned = true;
+          break;
+        }
+      }
+    }
+
+    // Fall back to 1-inning assignment
+    if (!assigned) {
+      for (const { player } of pitchScores) {
+        if (usedPitchers.has(player.id)) continue;
+        const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);
+        if (activeInCurrent) {
+          schedule.push({ playerId: player.id, inning });
+          usedPitchers.add(player.id);
+          i += 1;
+          assigned = true;
+          break;
+        }
+      }
+    }
+
+    // If no pitcher available at all, skip this inning
+    if (!assigned) {
+      i += 1;
+    }
+  }
+
+  return schedule;
+}
+
+/**
+ * Plan catching across 6 innings.
+ * Preference: catchers should catch 2 consecutive innings when possible.
+ * Catchers cannot be the same player assigned to pitch that inning.
+ */
+function planCatchingSchedule(
+  players: PlayerWithRatings[],
+  activeByInning: Map<number, PlayerWithRatings[]>,
+  pitchingSchedule: { playerId: string; inning: number }[],
+  historyMap: Map<string, SeasonHistory>,
+): { playerId: string; inning: number }[] {
+  const schedule: { playerId: string; inning: number }[] = [];
+  const innings = [...INNINGS];
+  const pitcherByInning = new Map<number, string>();
+  for (const p of pitchingSchedule) {
+    pitcherByInning.set(p.inning, p.playerId);
+  }
+
+  const usedCatchers = new Set<string>();
+
+  // Score each player for catching
+  const catchScores = players.map((p) => {
+    const rating = p.ratings.find((r) => r.position === "C")?.rating ?? 1;
+    const history = historyMap.get(p.id);
+    const seasonCount = history?.positionCounts["C"] ?? 0;
+    return { player: p, score: rating - seasonCount * 0.3 };
+  }).sort((a, b) => b.score - a.score);
+
+  let i = 0;
+  while (i < innings.length) {
+    const inning = innings[i];
+    const nextInning = i + 1 < innings.length ? innings[i + 1] : null;
+
+    let assigned = false;
+
+    // Try 2 consecutive innings first (preferred)
+    if (nextInning !== null) {
+      for (const { player } of catchScores) {
+        if (usedCatchers.has(player.id)) continue;
+        if (pitcherByInning.get(inning) === player.id) continue;
+        if (pitcherByInning.get(nextInning) === player.id) continue;
+        const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);
+        const activeInNext = (activeByInning.get(nextInning) || []).some((p) => p.id === player.id);
+        if (activeInCurrent && activeInNext) {
+          schedule.push({ playerId: player.id, inning });
+          schedule.push({ playerId: player.id, inning: nextInning });
+          usedCatchers.add(player.id);
+          i += 2;
+          assigned = true;
+          break;
+        }
+      }
+    }
+
+    // Fall back to 1-inning assignment
+    if (!assigned) {
+      for (const { player } of catchScores) {
+        if (usedCatchers.has(player.id)) continue;
+        if (pitcherByInning.get(inning) === player.id) continue;
+        const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);
+        if (activeInCurrent) {
+          schedule.push({ playerId: player.id, inning });
+          usedCatchers.add(player.id);
+          i += 1;
+          assigned = true;
+          break;
+        }
+      }
+    }
+
+    if (!assigned) {
+      i += 1;
+    }
+  }
+
+  return schedule;
+}
+
 function assignBenchScheduleFlexible(
   players: PlayerWithRatings[],
   historyMap: Map<string, SeasonHistory>,
   benchPerInning: number,
 ): Map<number, string[]> {
-  // Total bench slots across all innings
   const totalBenchSlots = benchPerInning * INNINGS.length;
 
-  // Sort players by total bench innings in season (those who sat less should sit more)
   const sorted = [...players].sort((a, b) => {
     const aBench = historyMap.get(a.id)?.totalBenchInnings ?? 0;
     const bBench = historyMap.get(b.id)?.totalBenchInnings ?? 0;
     return aBench - bBench;
   });
 
-  // Distribute bench innings fairly: each player gets floor or ceil of average
   const avgBench = totalBenchSlots / players.length;
   const baseBench = Math.floor(avgBench);
   let extraSlots = totalBenchSlots - baseBench * players.length;
@@ -119,7 +339,6 @@ function assignBenchScheduleFlexible(
     playerBenchCount[p.id] = 0;
   });
 
-  // Assign bench slots: prefer benching weaker players in important innings
   const inningOrder = [1, 2, 5, 6, 3, 4];
   for (const inning of inningOrder) {
     const slots = benchSlots.get(inning)!;
@@ -145,69 +364,6 @@ function assignBenchScheduleFlexible(
   }
 
   return benchSlots;
-}
-
-function assignPositions(
-  activePlayers: PlayerWithRatings[],
-  inning: number,
-  historyMap: Map<string, SeasonHistory>,
-  gamePositionCounts: Record<string, Record<string, number>>,
-): GameAssignment[] {
-  const assignments: GameAssignment[] = [];
-  const assignedPlayers = new Set<string>();
-  const assignedPositions = new Set<string>();
-  const importance = inningImportance(inning);
-
-  // For each position (in priority order), find best available player
-  for (const position of POSITION_PRIORITY) {
-    let bestScore = -Infinity;
-    let bestPlayer: PlayerWithRatings | null = null;
-
-    for (const player of activePlayers) {
-      if (assignedPlayers.has(player.id)) continue;
-
-      const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
-      const history = historyMap.get(player.id);
-
-      // Base score from rating
-      let score = rating * importance;
-
-      // Variety bonus: prefer positions the player hasn't played much
-      const seasonCount = history?.positionCounts[position] ?? 0;
-      const gameCount = gamePositionCounts[player.id][position] ?? 0;
-      score -= seasonCount * 0.3;
-      score -= gameCount * 3; // strongly discourage same position in same game
-
-      // Pitching bonus: if player hasn't pitched this season and this is pitching
-      if (position === "P" && history && !history.hasPitched) {
-        score += 2;
-      }
-
-      // For less important innings, slightly prefer weaker players at key positions
-      // This gives them a chance to play those positions
-      if (importance < 1 && rating < 5) {
-        score += 1;
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestPlayer = player;
-      }
-    }
-
-    if (bestPlayer) {
-      assignments.push({
-        playerId: bestPlayer.id,
-        playerName: bestPlayer.name,
-        inning,
-        position,
-      });
-      assignedPlayers.add(bestPlayer.id);
-      assignedPositions.add(position);
-    }
-  }
-
-  return assignments;
 }
 
 export function buildSeasonHistory(
