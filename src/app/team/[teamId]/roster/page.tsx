@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { POSITIONS } from "@/types";
 import Link from "next/link";
 
@@ -43,6 +43,8 @@ export default function RosterPage() {
   const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [showInvite, setShowInvite] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const fetchTeam = useCallback(async () => {
     const res = await fetch(`/api/teams/${teamId}`);
@@ -57,6 +59,33 @@ export default function RosterPage() {
     if (status === "unauthenticated") router.push("/login");
     if (status === "authenticated") fetchTeam();
   }, [status, router, fetchTeam]);
+
+  const sortedPlayers = team?.players.slice().sort((a, b) => a.battingOrder - b.battingOrder) ?? [];
+
+  const handleBattingDrop = async (targetIdx: number) => {
+    if (dragIndex === null || dragIndex === targetIdx || !team) return;
+
+    const reordered = [...sortedPlayers];
+    const [moved] = reordered.splice(dragIndex, 1);
+    reordered.splice(targetIdx, 0, moved);
+
+    const order = reordered.map((p, i) => ({ playerId: p.id, battingOrder: i + 1 }));
+
+    // Optimistic update
+    const updatedPlayers = team.players.map((p) => {
+      const newOrder = order.find((o) => o.playerId === p.id);
+      return newOrder ? { ...p, battingOrder: newOrder.battingOrder } : p;
+    });
+    setTeam({ ...team, players: updatedPlayers });
+    setDragIndex(null);
+    setDragOverIndex(null);
+
+    await fetch(`/api/teams/${teamId}/players`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order }),
+    });
+  };
 
   if (loading || !team) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
@@ -100,27 +129,39 @@ export default function RosterPage() {
 
       {/* Players table */}
       {team.players.length > 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Bat #</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Player</th>
-                {POSITIONS.map((pos) => (
-                  <th key={pos} className="text-center px-2 py-3 text-xs font-semibold text-gray-500 uppercase">
-                    {pos}
-                  </th>
-                ))}
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {team.players
-                .sort((a, b) => a.battingOrder - b.battingOrder)
-                .map((player) => (
-                  <tr key={player.id} className="border-b last:border-0 hover:bg-gray-50">
+        <>
+          <p className="text-xs text-gray-400 mb-2">Drag rows to reorder batting order</p>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="w-8 px-2 py-3"></th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Bat #</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Player</th>
+                  {POSITIONS.map((pos) => (
+                    <th key={pos} className="text-center px-2 py-3 text-xs font-semibold text-gray-500 uppercase">
+                      {pos}
+                    </th>
+                  ))}
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedPlayers.map((player, idx) => (
+                  <tr
+                    key={player.id}
+                    className={`border-b last:border-0 transition-colors ${
+                      dragOverIndex === idx ? "bg-blue-50 border-t-2 border-t-blue-400" : "hover:bg-gray-50"
+                    } ${dragIndex === idx ? "opacity-40" : ""}`}
+                    draggable={editingPlayer !== player.id}
+                    onDragStart={() => setDragIndex(idx)}
+                    onDragOver={(e) => { e.preventDefault(); setDragOverIndex(idx); }}
+                    onDragLeave={() => setDragOverIndex(null)}
+                    onDrop={() => handleBattingDrop(idx)}
+                    onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                  >
                     {editingPlayer === player.id ? (
-                      <td colSpan={POSITIONS.length + 3} className="p-0">
+                      <td colSpan={POSITIONS.length + 4} className="p-0">
                         <PlayerForm
                           teamId={teamId}
                           player={player}
@@ -131,6 +172,9 @@ export default function RosterPage() {
                       </td>
                     ) : (
                       <>
+                        <td className="px-2 py-3 text-gray-300 cursor-grab active:cursor-grabbing text-center">
+                          <span className="text-lg leading-none select-none">&#8801;</span>
+                        </td>
                         <td className="px-4 py-3 text-sm font-bold text-gray-400">{player.battingOrder}</td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{player.name}</td>
                         {POSITIONS.map((pos) => {
@@ -166,9 +210,10 @@ export default function RosterPage() {
                     )}
                   </tr>
                 ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : (
         <div className="text-center py-12 bg-white rounded-lg shadow-sm">
           <p className="text-gray-500">No players yet. Add your 12 players to get started!</p>
@@ -239,7 +284,7 @@ function RatingBadge({ rating }: { rating: number }) {
 
   return (
     <span className={`inline-block w-6 h-6 leading-6 rounded text-xs font-bold ${bg}`}>
-      {rating || "—"}
+      {rating || "\u2014"}
     </span>
   );
 }
@@ -328,14 +373,14 @@ function PlayerForm({
               >
                 {[9, 8, 7, 6, 5, 4, 3, 2, 1].map((val) => (
                   <option key={val} value={val}>
-                    {val}{val === 9 ? " ★" : val === 1 ? " ▽" : ""}
+                    {val}{val === 9 ? " \u2605" : val === 1 ? " \u25BD" : ""}
                   </option>
                 ))}
               </select>
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">9 ★ = Best &nbsp; 1 ▽ = Worst</p>
+        <p className="text-xs text-gray-400 mt-1">9 \u2605 = Best &nbsp; 1 \u25BD = Worst</p>
       </div>
 
       <div className="flex gap-2">
