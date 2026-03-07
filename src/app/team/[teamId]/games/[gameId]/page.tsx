@@ -38,6 +38,7 @@ interface GameData {
   }[];
   exclusions?: { playerId: string }[];
   poolPlayers?: { id: string; name: string }[];
+  gameBattingOrder?: { playerId: string; order: number }[];
 }
 
 export default function GamePlanPage() {
@@ -49,6 +50,7 @@ export default function GamePlanPage() {
 
   const [game, setGame] = useState<GameData | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [battingOrder, setBattingOrder] = useState<{ playerId: string; playerName: string; order: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -65,6 +67,27 @@ export default function GamePlanPage() {
           position: i.position as FieldPosition,
         })),
       );
+
+      // Build batting order: use per-game order if available, else team order
+      const excludedIds = new Set((data.exclusions || []).map((e) => e.playerId));
+      const activeIds = new Set(data.innings.map((i) => i.playerId));
+      const activePlayers = data.team.players.filter(
+        (p) => !excludedIds.has(p.id) || activeIds.has(p.id),
+      );
+
+      const gameOrder = data.gameBattingOrder || [];
+      const gameOrderMap = new Map(gameOrder.map((o) => [o.playerId, o.order]));
+
+      const ordered = activePlayers
+        .map((p) => ({
+          playerId: p.id,
+          playerName: p.isPoolPlayer ? `${p.name} (pool)` : p.name,
+          order: gameOrderMap.get(p.id) ?? p.battingOrder,
+        }))
+        .sort((a, b) => a.order - b.order)
+        .map((item, i) => ({ ...item, order: i + 1 }));
+
+      setBattingOrder(ordered);
     }
     setLoading(false);
   }, [teamId, gameId]);
@@ -102,23 +125,26 @@ export default function GamePlanPage() {
     if (res.ok) fetchGame();
   };
 
+  const handleBattingOrderUpdate = async (
+    newOrder: { playerId: string; playerName: string; order: number }[],
+  ) => {
+    setBattingOrder(newOrder);
+    setSaving(true);
+
+    await fetch(`/api/teams/${teamId}/games/${gameId}/batting-order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order: newOrder.map((o) => ({ playerId: o.playerId, order: o.order })),
+      }),
+    });
+
+    setSaving(false);
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
-
-  const excludedPlayerIds = new Set((game.exclusions || []).map((e) => e.playerId));
-  const activePlayerIds = new Set(
-    assignments.map((a) => a.playerId),
-  );
-
-  const battingOrder = game.team.players
-    .filter((p) => !excludedPlayerIds.has(p.id) || activePlayerIds.has(p.id))
-    .sort((a, b) => a.battingOrder - b.battingOrder)
-    .map((p) => ({
-      playerId: p.id,
-      playerName: p.isPoolPlayer ? `${p.name} (pool)` : p.name,
-      order: p.battingOrder,
-    }));
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -170,6 +196,7 @@ export default function GamePlanPage() {
         teamName={game.team.name}
         isLocked={game.isLocked}
         onUpdate={handleUpdate}
+        onBattingOrderUpdate={handleBattingOrderUpdate}
       />
     </div>
   );
