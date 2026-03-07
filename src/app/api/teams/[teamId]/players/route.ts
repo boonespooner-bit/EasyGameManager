@@ -13,12 +13,12 @@ export async function GET(
 
   const { teamId } = await params;
   const players = await prisma.player.findMany({
-    where: { teamId, NOT: { isPoolPlayer: true } },
+    where: { teamId },
     orderBy: { battingOrder: "asc" },
-    select: { id: true, name: true, battingOrder: true },
+    select: { id: true, name: true, battingOrder: true, isPoolPlayer: true },
   });
 
-  return NextResponse.json(players);
+  return NextResponse.json(players.filter((p) => !p.isPoolPlayer));
 }
 
 export async function POST(

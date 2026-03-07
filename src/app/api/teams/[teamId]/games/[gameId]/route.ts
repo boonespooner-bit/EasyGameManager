@@ -22,20 +22,48 @@ export async function GET(
       team: {
         include: {
           players: {
-            where: { OR: [{ NOT: { isPoolPlayer: true } }, { poolGameId: gameId }] },
             include: { ratings: true },
             orderBy: { battingOrder: "asc" },
           },
         },
       },
-      exclusions: { select: { playerId: true } },
-      poolPlayers: { select: { id: true, name: true } },
     },
   });
 
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
 
-  return NextResponse.json(game);
+  // Query exclusions and pool players separately (tables may not exist in unmigrated DBs)
+  let exclusions: { playerId: string }[] = [];
+  let poolPlayers: { id: string; name: string }[] = [];
+  try {
+    exclusions = await prisma.gameExclusion.findMany({
+      where: { gameId },
+      select: { playerId: true },
+    });
+  } catch {
+    // Table may not exist yet
+  }
+  try {
+    poolPlayers = await prisma.player.findMany({
+      where: { poolGameId: gameId },
+      select: { id: true, name: true },
+    });
+  } catch {
+    // Column may not exist yet
+  }
+
+  // Filter players: roster players + pool players for this game
+  const poolPlayerIds = new Set(poolPlayers.map((p) => p.id));
+  const filteredPlayers = game.team.players.filter(
+    (p) => !p.isPoolPlayer || poolPlayerIds.has(p.id),
+  );
+
+  return NextResponse.json({
+    ...game,
+    team: { ...game.team, players: filteredPlayers },
+    exclusions,
+    poolPlayers,
+  });
 }
 
 export async function PUT(
