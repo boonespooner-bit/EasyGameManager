@@ -76,11 +76,7 @@ async function regenerateFutureGames(teamId: string) {
   const futureGames = await prisma.game.findMany({
     where: { teamId, isLocked: false },
     orderBy: { date: "asc" },
-    include: {
-      innings: true,
-      exclusions: { select: { playerId: true } },
-      poolPlayers: { include: { ratings: true } },
-    },
+    include: { innings: true },
   });
 
   const lockedGames = await prisma.game.findMany({
@@ -88,10 +84,11 @@ async function regenerateFutureGames(teamId: string) {
     include: { innings: true },
   });
 
-  const rosterPlayers = await prisma.player.findMany({
-    where: { teamId, NOT: { isPoolPlayer: true } },
+  const allPlayers = await prisma.player.findMany({
+    where: { teamId },
     include: { ratings: true },
   });
+  const rosterPlayers = allPlayers.filter((p) => !p.isPoolPlayer);
 
   if (rosterPlayers.length === 0) return;
 
@@ -102,11 +99,27 @@ async function regenerateFutureGames(teamId: string) {
   let cumulativeHistory = pastAssignments;
 
   for (const game of futureGames) {
-    const excludedIds = new Set(game.exclusions.map((e) => e.playerId));
+    // Query exclusions and pool players separately (safe if tables don't exist yet)
+    let exclusions: { playerId: string }[] = [];
+    let gamePoolPlayers: typeof rosterPlayers = [];
+    try {
+      exclusions = await prisma.gameExclusion.findMany({
+        where: { gameId: game.id },
+        select: { playerId: true },
+      });
+    } catch { /* table may not exist */ }
+    try {
+      gamePoolPlayers = await prisma.player.findMany({
+        where: { poolGameId: game.id },
+        include: { ratings: true },
+      });
+    } catch { /* column may not exist */ }
+
+    const excludedIds = new Set(exclusions.map((e) => e.playerId));
     const availablePlayers = rosterPlayers.filter((p) => !excludedIds.has(p.id));
     const gamePlayers = [
       ...availablePlayers,
-      ...game.poolPlayers,
+      ...gamePoolPlayers,
     ];
 
     const seasonHistory = buildSeasonHistory(cumulativeHistory);

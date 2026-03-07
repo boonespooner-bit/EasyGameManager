@@ -22,7 +22,6 @@ export async function GET(
     where: { id: teamId },
     include: {
       players: {
-        where: { NOT: { isPoolPlayer: true } },
         include: { ratings: true },
         orderBy: { battingOrder: "asc" },
       },
@@ -31,7 +30,15 @@ export async function GET(
     },
   });
 
-  return NextResponse.json(team);
+  if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+
+  // Filter out pool players in JS (backward-compatible with unmigrated DBs)
+  const filtered = {
+    ...team,
+    players: team.players.filter((p) => !p.isPoolPlayer),
+  };
+
+  return NextResponse.json(filtered);
 }
 
 export async function DELETE(

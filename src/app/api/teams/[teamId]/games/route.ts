@@ -40,10 +40,11 @@ export async function POST(
   const { opponent, date, excludedPlayerIds = [], poolPlayers = [] } = await req.json();
 
   // Get roster players (non-pool players)
-  const allPlayers = await prisma.player.findMany({
-    where: { teamId, NOT: { isPoolPlayer: true } },
+  const allPlayersRaw = await prisma.player.findMany({
+    where: { teamId },
     include: { ratings: true },
   });
+  const allPlayers = allPlayersRaw.filter((p) => !p.isPoolPlayer);
 
   // Filter out excluded players
   const excludedSet = new Set(excludedPlayerIds as string[]);
@@ -109,21 +110,28 @@ export async function POST(
           position: a.position,
         })),
       },
-      exclusions: {
-        create: (excludedPlayerIds as string[]).map((playerId: string) => ({
-          playerId,
-        })),
-      },
     },
     include: { innings: { include: { player: true } } },
   });
 
-  // Link pool players to this game
-  if (createdPoolPlayers.length > 0) {
-    await prisma.player.updateMany({
-      where: { id: { in: createdPoolPlayers.map((p) => p.id) } },
-      data: { poolGameId: game.id },
-    });
+  // Create exclusions and link pool players (safe if tables/columns don't exist yet)
+  try {
+    if ((excludedPlayerIds as string[]).length > 0) {
+      await prisma.gameExclusion.createMany({
+        data: (excludedPlayerIds as string[]).map((playerId: string) => ({
+          gameId: game.id,
+          playerId,
+        })),
+      });
+    }
+    if (createdPoolPlayers.length > 0) {
+      await prisma.player.updateMany({
+        where: { id: { in: createdPoolPlayers.map((p) => p.id) } },
+        data: { poolGameId: game.id },
+      });
+    }
+  } catch {
+    // Migration may not have been applied yet
   }
 
   return NextResponse.json(game, { status: 201 });
