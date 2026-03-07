@@ -22,7 +22,7 @@ export async function GET(
       team: {
         include: {
           players: {
-            where: { OR: [{ isPoolPlayer: false }, { poolGameId: gameId }] },
+            where: { OR: [{ NOT: { isPoolPlayer: true } }, { poolGameId: gameId }] },
             include: { ratings: true },
             orderBy: { battingOrder: "asc" },
           },
