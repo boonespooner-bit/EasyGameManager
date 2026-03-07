@@ -18,6 +18,7 @@ interface Props {
   teamName: string;
   isLocked: boolean;
   onUpdate?: (assignments: Assignment[]) => void;
+  onBattingOrderUpdate?: (order: { playerId: string; playerName: string; order: number }[]) => void;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -40,9 +41,12 @@ export default function BaseballField({
   teamName,
   isLocked,
   onUpdate,
+  onBattingOrderUpdate,
 }: Props) {
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [battingDragIndex, setBattingDragIndex] = useState<number | null>(null);
+  const [battingDragOverIndex, setBattingDragOverIndex] = useState<number | null>(null);
 
   const getPlayersAtPosition = (position: string) => {
     return INNINGS.map((inning) => {
@@ -253,12 +257,34 @@ export default function BaseballField({
         {/* Batting Order */}
         <div className="w-48">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Batting Order</h3>
+          {!isLocked && onBattingOrderUpdate && (
+            <p className="text-xs text-gray-400 mb-1">Drag to reorder</p>
+          )}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-            {battingOrder.map((b) => (
+            {battingOrder.map((b, idx) => (
               <div
                 key={b.playerId}
-                className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0"
+                className={`flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0 transition-colors ${
+                  !isLocked && onBattingOrderUpdate ? "cursor-grab active:cursor-grabbing" : ""
+                } ${battingDragOverIndex === idx ? "bg-blue-50 border-t-2 border-t-blue-400" : "hover:bg-gray-50"
+                } ${battingDragIndex === idx ? "opacity-40" : ""}`}
+                draggable={!isLocked && !!onBattingOrderUpdate}
+                onDragStart={() => { setBattingDragIndex(idx); }}
+                onDragOver={(e) => { e.preventDefault(); setBattingDragOverIndex(idx); }}
+                onDragLeave={() => setBattingDragOverIndex(null)}
+                onDrop={() => {
+                  if (battingDragIndex === null || battingDragIndex === idx || !onBattingOrderUpdate) return;
+                  const reordered = [...battingOrder];
+                  const [moved] = reordered.splice(battingDragIndex, 1);
+                  reordered.splice(idx, 0, moved);
+                  const renumbered = reordered.map((item, i) => ({ ...item, order: i + 1 }));
+                  onBattingOrderUpdate(renumbered);
+                  setBattingDragIndex(null);
+                  setBattingDragOverIndex(null);
+                }}
+                onDragEnd={() => { setBattingDragIndex(null); setBattingDragOverIndex(null); }}
               >
+                <span className="text-gray-300 text-lg leading-none select-none mr-1">&#8801;</span>
                 <span className="text-xs font-bold text-gray-400 w-4">{b.order}</span>
                 <span className="text-sm">{b.playerName}</span>
               </div>
