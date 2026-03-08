@@ -11,6 +11,7 @@ function inningImportance(inning: number): number {
 export function generateGamePlan(
   players: PlayerWithRatings[],
   seasonHistory: SeasonHistory[],
+  lockedPitchers?: { playerId: string; inning: number }[],
 ): GameAssignment[] {
   if (players.length === 0) {
     return [];
@@ -26,6 +27,14 @@ export function generateGamePlan(
     gamePositionCounts[p.id] = {};
   });
 
+  // When pitchers are locked, ensure they are not benched in their pitching innings
+  const lockedPitcherInnings = new Map<number, string>(); // inning -> playerId
+  if (lockedPitchers && lockedPitchers.length > 0) {
+    for (const lp of lockedPitchers) {
+      lockedPitcherInnings.set(lp.inning, lp.playerId);
+    }
+  }
+
   // Pre-assign who is benched each inning (if more than 9 players)
   let benchSchedule: Map<number, string[]> = new Map();
   for (const inning of INNINGS) {
@@ -34,7 +43,7 @@ export function generateGamePlan(
 
   if (numPlayers > numPositions) {
     const benchPerInning = numPlayers - numPositions;
-    benchSchedule = assignBenchScheduleFlexible(players, historyMap, benchPerInning);
+    benchSchedule = assignBenchScheduleFlexible(players, historyMap, benchPerInning, lockedPitcherInnings);
   }
 
   // Add bench assignments
@@ -58,9 +67,10 @@ export function generateGamePlan(
     activeByInning.set(inning, players.filter((p) => !benchedIds.includes(p.id)));
   }
 
-  // Phase 1: Pre-plan pitching schedule across all innings
-  // Rule: A pitcher can pitch 1 inning or 2 consecutive innings, max 2
-  const pitchingSchedule = planPitchingSchedule(players, activeByInning, historyMap);
+  // Phase 1: Use locked pitchers if provided, otherwise auto-plan
+  const pitchingSchedule = (lockedPitchers && lockedPitchers.length > 0)
+    ? lockedPitchers
+    : planPitchingSchedule(players, activeByInning, historyMap);
 
   // Phase 2: Pre-plan catching schedule across all innings
   // Preference: catchers should catch 2 consecutive innings when possible
@@ -302,6 +312,7 @@ function assignBenchScheduleFlexible(
   players: PlayerWithRatings[],
   historyMap: Map<string, SeasonHistory>,
   benchPerInning: number,
+  lockedPitcherInnings: Map<number, string> = new Map(),
 ): Map<number, string[]> {
   const totalBenchSlots = benchPerInning * INNINGS.length;
 
@@ -351,6 +362,8 @@ function assignBenchScheduleFlexible(
         .filter((p) => !slots.includes(p.id))
         // No consecutive bench innings: skip players benched in the previous inning
         .filter((p) => !prevBenched.includes(p.id))
+        // Never bench a locked pitcher in their pitching inning
+        .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
         .sort((a, b) => {
           const importance = inningImportance(inning);
           const aRating = playerAvgRating.get(a.id) || 5;
@@ -366,6 +379,7 @@ function assignBenchScheduleFlexible(
         const fallback = allBenchPlayers
           .filter((p) => playerBenchCount[p.id] < p.target)
           .filter((p) => !slots.includes(p.id))
+          .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
           .sort((a, b) => {
             const importance = inningImportance(inning);
             const aRating = playerAvgRating.get(a.id) || 5;
