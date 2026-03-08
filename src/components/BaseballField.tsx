@@ -19,6 +19,10 @@ interface Props {
   isLocked: boolean;
   onUpdate?: (assignments: Assignment[]) => void;
   onBattingOrderUpdate?: (order: { playerId: string; playerName: string; order: number }[]) => void;
+  pitchingMode?: boolean;
+  allPlayers?: { id: string; name: string }[];
+  onPitcherChange?: (inning: number, playerId: string) => void;
+  regenerating?: boolean;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -42,6 +46,10 @@ export default function BaseballField({
   isLocked,
   onUpdate,
   onBattingOrderUpdate,
+  pitchingMode,
+  allPlayers,
+  onPitcherChange,
+  regenerating,
 }: Props) {
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,20 +213,30 @@ export default function BaseballField({
             {POSITIONS.map((pos) => {
               const coord = POSITION_COORDS[pos];
               const players = getPlayersAtPosition(pos);
+              const isPitcher = pos === "P" && pitchingMode;
               return (
                 <div
                   key={pos}
                   className="absolute transform -translate-x-1/2 -translate-y-1/2"
                   style={{ left: `${coord.x}%`, top: `${coord.y}%` }}
                 >
-                  <PositionBox
-                    position={pos}
-                    players={players}
-                    isLocked={isLocked}
-                    onDragStart={handleDragStart}
-                    onDrop={handleDrop}
-                    isDragging={!!dragSource}
-                  />
+                  {isPitcher ? (
+                    <PitcherBox
+                      players={players}
+                      allPlayers={allPlayers || []}
+                      onPitcherChange={onPitcherChange}
+                      disabled={!!regenerating}
+                    />
+                  ) : (
+                    <PositionBox
+                      position={pos}
+                      players={players}
+                      isLocked={isLocked}
+                      onDragStart={handleDragStart}
+                      onDrop={handleDrop}
+                      isDragging={!!dragSource}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -269,7 +287,12 @@ export default function BaseballField({
                 } ${battingDragOverIndex === idx ? "bg-blue-50 border-t-2 border-t-blue-400" : "hover:bg-gray-50"
                 } ${battingDragIndex === idx ? "opacity-40" : ""}`}
                 draggable={!isLocked && !!onBattingOrderUpdate}
-                onDragStart={() => { setBattingDragIndex(idx); }}
+                onDragStart={(e) => {
+                  setBattingDragIndex(idx);
+                  if (pitchingMode) {
+                    e.dataTransfer.setData("text/pitcher-player-id", b.playerId);
+                  }
+                }}
                 onDragOver={(e) => { e.preventDefault(); setBattingDragOverIndex(idx); }}
                 onDragLeave={() => setBattingDragOverIndex(null)}
                 onDrop={() => {
@@ -292,6 +315,120 @@ export default function BaseballField({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PitcherBox({
+  players,
+  allPlayers,
+  onPitcherChange,
+  disabled,
+}: {
+  players: ({ inning: number; playerId: string; name: string } | null)[];
+  allPlayers: { id: string; name: string }[];
+  onPitcherChange?: (inning: number, playerId: string) => void;
+  disabled: boolean;
+}) {
+  const [editingInning, setEditingInning] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [dragOverInning, setDragOverInning] = useState<number | null>(null);
+
+  const filtered = search.trim()
+    ? allPlayers.filter((p) =>
+        p.name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : allPlayers;
+
+  const selectPlayer = (inning: number, playerId: string) => {
+    onPitcherChange?.(inning, playerId);
+    setEditingInning(null);
+    setSearch("");
+  };
+
+  return (
+    <div className="bg-red-50 rounded shadow-md border-2 border-red-300 min-w-[110px]">
+      <div className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 text-center rounded-t">
+        P (Priority)
+      </div>
+      <div className="p-1">
+        {players.map((p, i) => {
+          const inning = i + 1;
+          const isEditing = editingInning === inning;
+          const isDragOver = dragOverInning === inning;
+
+          return (
+            <div
+              key={i}
+              className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
+                isDragOver ? "ring-2 ring-red-400 bg-red-100" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverInning(inning);
+              }}
+              onDragLeave={() => setDragOverInning(null)}
+              onDrop={(e) => {
+                e.stopPropagation();
+                // Read player ID from drag data
+                const playerId = e.dataTransfer.getData("text/pitcher-player-id");
+                if (playerId && onPitcherChange && !disabled) {
+                  onPitcherChange(inning, playerId);
+                }
+                setDragOverInning(null);
+              }}
+            >
+              {isEditing ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onBlur={() => setTimeout(() => { setEditingInning(null); setSearch(""); }, 150)}
+                    className="w-full text-[10px] px-1 py-0.5 border border-red-300 rounded outline-none"
+                    placeholder="Type name..."
+                    autoFocus
+                  />
+                  {filtered.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-32 overflow-y-auto mt-0.5">
+                      {filtered.map((pl) => (
+                        <button
+                          key={pl.id}
+                          className="block w-full text-left text-[10px] px-2 py-1 hover:bg-red-50 truncate"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            selectPlayer(inning, pl.id);
+                          }}
+                        >
+                          {pl.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="flex items-center gap-1 cursor-pointer"
+                  onClick={() => {
+                    if (!disabled) {
+                      setEditingInning(inning);
+                      setSearch("");
+                    }
+                  }}
+                >
+                  <span className="font-bold text-gray-400 w-3">{inning}.</span>
+                  <span className="truncate">{p?.name || "\u2014"}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {disabled && (
+        <div className="text-[8px] text-red-500 text-center py-0.5 animate-pulse">
+          Updating...
+        </div>
+      )}
     </div>
   );
 }

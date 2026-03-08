@@ -254,16 +254,6 @@ export default function GamePlanPage() {
         </div>
       )}
 
-      {/* Pitching Priority Panel */}
-      {pitchingMode && (
-        <PitchingPanel
-          currentPitchers={currentPitchers}
-          activePlayers={activePlayers}
-          onPitcherChange={handlePitcherChange}
-          disabled={regenerating}
-        />
-      )}
-
       <BaseballField
         assignments={assignments}
         battingOrder={battingOrder}
@@ -273,112 +263,11 @@ export default function GamePlanPage() {
         isLocked={game.isLocked}
         onUpdate={handleUpdate}
         onBattingOrderUpdate={handleBattingOrderUpdate}
+        pitchingMode={pitchingMode}
+        allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name }))}
+        onPitcherChange={handlePitcherChange}
+        regenerating={regenerating}
       />
-    </div>
-  );
-}
-
-function PitchingPanel({
-  currentPitchers,
-  activePlayers,
-  onPitcherChange,
-  disabled,
-}: {
-  currentPitchers: { inning: number; playerId: string | null; playerName: string | null }[];
-  activePlayers: { id: string; name: string; isPoolPlayer?: boolean; ratings: { position: string; rating: number }[] }[];
-  onPitcherChange: (inning: number, playerId: string) => void;
-  disabled: boolean;
-}) {
-  const [dragPlayerId, setDragPlayerId] = useState<string | null>(null);
-  const [dragOverInning, setDragOverInning] = useState<number | null>(null);
-
-  // Sort available players by pitching rating
-  const playersByPitching = [...activePlayers].sort((a, b) => {
-    const aRating = a.ratings.find((r) => r.position === "P")?.rating ?? 0;
-    const bRating = b.ratings.find((r) => r.position === "P")?.rating ?? 0;
-    return bRating - aRating;
-  });
-
-  return (
-    <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
-      <h3 className="text-sm font-bold text-orange-800 mb-3">
-        Pitching Lineup — Drag players into inning slots
-      </h3>
-      <div className="flex gap-4">
-        {/* Available players */}
-        <div className="w-48 shrink-0">
-          <div className="text-xs font-semibold text-gray-600 mb-1">Available Players</div>
-          <div className="bg-white border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1">
-            {playersByPitching.map((p) => {
-              const pitchRating = p.ratings.find((r) => r.position === "P")?.rating ?? 0;
-              const isCurrentPitcher = currentPitchers.some((cp) => cp.playerId === p.id);
-              return (
-                <div
-                  key={p.id}
-                  className={`flex items-center justify-between px-2 py-1.5 rounded text-sm cursor-grab active:cursor-grabbing transition-colors ${
-                    isCurrentPitcher
-                      ? "bg-orange-100 text-orange-800"
-                      : "bg-gray-50 hover:bg-gray-100"
-                  } ${dragPlayerId === p.id ? "opacity-40" : ""}`}
-                  draggable={!disabled}
-                  onDragStart={() => setDragPlayerId(p.id)}
-                  onDragEnd={() => setDragPlayerId(null)}
-                >
-                  <span className="truncate">{p.isPoolPlayer ? `${p.name} (pool)` : p.name}</span>
-                  <span className={`text-xs font-bold ml-1 ${
-                    pitchRating >= 7 ? "text-green-600" : pitchRating >= 4 ? "text-yellow-600" : "text-red-500"
-                  }`}>
-                    P:{pitchRating}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Inning slots */}
-        <div className="flex-1">
-          <div className="text-xs font-semibold text-gray-600 mb-1">Pitching Slots</div>
-          <div className="grid grid-cols-6 gap-2">
-            {currentPitchers.map(({ inning, playerId, playerName }) => (
-              <div
-                key={inning}
-                className={`border-2 rounded-lg p-2 min-h-[70px] text-center transition-colors ${
-                  dragOverInning === inning
-                    ? "border-orange-400 bg-orange-100"
-                    : "border-gray-300 bg-white"
-                }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOverInning(inning);
-                }}
-                onDragLeave={() => setDragOverInning(null)}
-                onDrop={() => {
-                  if (dragPlayerId && !disabled) {
-                    onPitcherChange(inning, dragPlayerId);
-                  }
-                  setDragPlayerId(null);
-                  setDragOverInning(null);
-                }}
-              >
-                <div className="text-xs font-bold text-gray-500 mb-1">Inn {inning}</div>
-                {playerId ? (
-                  <div className="text-sm font-medium text-orange-800 truncate">
-                    {playerName}
-                  </div>
-                ) : (
-                  <div className="text-xs text-gray-400">Drop here</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      {disabled && (
-        <div className="mt-2 text-xs text-orange-600 animate-pulse">
-          Regenerating lineup with new pitching assignments...
-        </div>
-      )}
     </div>
   );
 }
