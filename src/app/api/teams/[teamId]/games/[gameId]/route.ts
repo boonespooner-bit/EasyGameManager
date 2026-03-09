@@ -94,11 +94,16 @@ export async function PUT(
     return NextResponse.json({ error: "No permission" }, { status: 403 });
   }
 
-  const { isLocked } = await req.json();
+  const body = await req.json();
+
+  const data: Record<string, unknown> = {};
+  if (body.isLocked !== undefined) data.isLocked = body.isLocked;
+  if (body.opponent !== undefined) data.opponent = body.opponent;
+  if (body.date !== undefined) data.date = new Date(body.date);
 
   const game = await prisma.game.update({
     where: { id: gameId },
-    data: { ...(isLocked !== undefined && { isLocked }) },
+    data,
   });
 
   return NextResponse.json(game);

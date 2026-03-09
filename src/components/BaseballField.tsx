@@ -33,6 +33,7 @@ interface Props {
   onPitcherUnassign?: (inning: number) => void;
   regenerating?: boolean;
   heldPositions?: HeldPosition[];
+  onGameInfoUpdate?: (opponent: string, date: string) => void;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -64,11 +65,15 @@ export default function BaseballField({
   onPitcherUnassign,
   regenerating,
   heldPositions,
+  onGameInfoUpdate,
 }: Props) {
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [battingDragIndex, setBattingDragIndex] = useState<number | null>(null);
   const [battingDragOverIndex, setBattingDragOverIndex] = useState<number | null>(null);
+  const [editingGameInfo, setEditingGameInfo] = useState(false);
+  const [editOpponent, setEditOpponent] = useState(opponent);
+  const [editDate, setEditDate] = useState(date);
 
   const getPlayersAtPosition = (position: string) => {
     return INNINGS.map((inning) => {
@@ -176,10 +181,82 @@ export default function BaseballField({
     <div className="max-w-6xl mx-auto">
       {/* Title */}
       <div className="text-center mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">
-          {teamName} vs. {opponent}
-        </h1>
-        <p className="text-gray-500">{new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+        {editingGameInfo ? (
+          <div className="inline-flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold text-gray-900">{teamName} vs.</span>
+              <input
+                type="text"
+                value={editOpponent}
+                onChange={(e) => setEditOpponent(e.target.value)}
+                className="text-2xl font-bold text-gray-900 border-b-2 border-blue-400 bg-transparent outline-none text-center w-48"
+                autoFocus
+              />
+            </div>
+            <input
+              type="date"
+              value={editDate.slice(0, 10)}
+              onChange={(e) => setEditDate(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (editOpponent.trim() && onGameInfoUpdate) {
+                    onGameInfoUpdate(editOpponent.trim(), editDate);
+                  }
+                  setEditingGameInfo(false);
+                }}
+                className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-500"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setEditOpponent(opponent);
+                  setEditDate(date);
+                  setEditingGameInfo(false);
+                }}
+                className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <h1
+              className={`text-2xl font-bold text-gray-900 ${!isLocked && onGameInfoUpdate ? "cursor-pointer hover:text-blue-700 transition-colors" : ""}`}
+              onClick={() => {
+                if (!isLocked && onGameInfoUpdate) {
+                  setEditOpponent(opponent);
+                  setEditDate(date);
+                  setEditingGameInfo(true);
+                }
+              }}
+              title={!isLocked && onGameInfoUpdate ? "Click to edit" : undefined}
+            >
+              {teamName} vs. {opponent}
+              {!isLocked && onGameInfoUpdate && (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 inline-block ml-1 text-gray-400">
+                  <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                </svg>
+              )}
+            </h1>
+            <p
+              className={`text-gray-500 ${!isLocked && onGameInfoUpdate ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
+              onClick={() => {
+                if (!isLocked && onGameInfoUpdate) {
+                  setEditOpponent(opponent);
+                  setEditDate(date);
+                  setEditingGameInfo(true);
+                }
+              }}
+            >
+              {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            </p>
+          </>
+        )}
         {isLocked && (
           <span className="inline-block mt-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
             Locked (Historical)

@@ -278,6 +278,19 @@ export default function GamePlanPage() {
     setRegenerating(false);
   };
 
+  const handleGameInfoUpdate = async (newOpponent: string, newDate: string) => {
+    setSaving(true);
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ opponent: newOpponent, date: newDate }),
+    });
+    if (res.ok) {
+      await fetchGame();
+    }
+    setSaving(false);
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
@@ -373,6 +386,7 @@ export default function GamePlanPage() {
         onPitcherUnassign={handlePitcherUnassign}
         regenerating={regenerating}
         heldPositions={heldPositions}
+        onGameInfoUpdate={handleGameInfoUpdate}
       />
     </div>
   );
