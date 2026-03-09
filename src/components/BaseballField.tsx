@@ -29,6 +29,8 @@ interface Props {
   allPlayers?: { id: string; name: string }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  onPositionUnassign?: (inning: number, position: string) => void;
+  onPitcherUnassign?: (inning: number) => void;
   regenerating?: boolean;
   heldPositions?: HeldPosition[];
 }
@@ -58,6 +60,8 @@ export default function BaseballField({
   allPlayers,
   onPitcherChange,
   onPositionChange,
+  onPositionUnassign,
+  onPitcherUnassign,
   regenerating,
   heldPositions,
 }: Props) {
@@ -198,7 +202,7 @@ export default function BaseballField({
       <div className="flex gap-6">
         {/* Field */}
         <div className="flex-1">
-          <div className="relative bg-green-600 rounded-2xl overflow-hidden" style={{ paddingBottom: "100%" }}>
+          <div className="relative bg-green-600 rounded-2xl" style={{ paddingBottom: "100%" }}>
             {/* Infield diamond */}
             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
               {/* Outfield arc */}
@@ -231,13 +235,14 @@ export default function BaseballField({
                 <div
                   key={pos}
                   className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                  style={{ left: `${coord.x}%`, top: `${coord.y}%` }}
+                  style={{ left: `${coord.x}%`, top: `${coord.y}%`, zIndex: 1 }}
                 >
                   {isPitcher ? (
                     <PitcherBox
                       players={players}
                       allPlayers={allPlayers || []}
                       onPitcherChange={onPitcherChange}
+                      onPitcherUnassign={onPitcherUnassign}
                       disabled={!!regenerating}
                     />
                   ) : (
@@ -250,6 +255,7 @@ export default function BaseballField({
                       isDragging={!!dragSource}
                       allPlayers={allPlayers}
                       onPositionChange={onPositionChange}
+                      onPositionUnassign={onPositionUnassign}
                       disabled={regenerating}
                       heldInnings={heldInningsForPos}
                     />
@@ -351,11 +357,13 @@ function PitcherBox({
   players,
   allPlayers,
   onPitcherChange,
+  onPitcherUnassign,
   disabled,
 }: {
   players: ({ inning: number; playerId: string; name: string } | null)[];
   allPlayers: { id: string; name: string }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
+  onPitcherUnassign?: (inning: number) => void;
   disabled: boolean;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
@@ -417,8 +425,7 @@ function PitcherBox({
                     placeholder="Type name..."
                     autoFocus
                   />
-                  {filtered.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-32 overflow-y-auto mt-0.5">
+                  <div className="absolute top-full left-0 bg-white border border-gray-300 rounded shadow-lg max-h-40 overflow-y-auto mt-0.5 min-w-[120px]" style={{ zIndex: 9999 }}>
                       {filtered.map((pl) => (
                         <button
                           key={pl.id}
@@ -431,8 +438,18 @@ function PitcherBox({
                           {pl.name}
                         </button>
                       ))}
+                      <button
+                        className="block w-full text-left text-[10px] px-2 py-1 hover:bg-gray-100 truncate text-gray-400 italic border-t border-gray-200"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          onPitcherUnassign?.(inning);
+                          setEditingInning(null);
+                          setSearch("");
+                        }}
+                      >
+                        — Unassign
+                      </button>
                     </div>
-                  )}
                 </div>
               ) : (
                 <div
@@ -470,6 +487,7 @@ function PositionBox({
   isDragging,
   allPlayers,
   onPositionChange,
+  onPositionUnassign,
   disabled,
   heldInnings,
 }: {
@@ -481,6 +499,7 @@ function PositionBox({
   isDragging: boolean;
   allPlayers?: { id: string; name: string }[];
   onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  onPositionUnassign?: (inning: number, position: string) => void;
   disabled?: boolean;
   heldInnings?: Set<number>;
 }) {
@@ -536,8 +555,7 @@ function PositionBox({
                     placeholder="Type name..."
                     autoFocus
                   />
-                  {filtered.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-32 overflow-y-auto mt-0.5">
+                  <div className="absolute top-full left-0 bg-white border border-gray-300 rounded shadow-lg max-h-40 overflow-y-auto mt-0.5 min-w-[120px]" style={{ zIndex: 9999 }}>
                       {filtered.map((pl) => (
                         <button
                           key={pl.id}
@@ -550,8 +568,18 @@ function PositionBox({
                           {pl.name}
                         </button>
                       ))}
+                      <button
+                        className="block w-full text-left text-[10px] px-2 py-1 hover:bg-gray-100 truncate text-gray-400 italic border-t border-gray-200"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          onPositionUnassign?.(inning, position);
+                          setEditingInning(null);
+                          setSearch("");
+                        }}
+                      >
+                        — Unassign
+                      </button>
                     </div>
-                  )}
                 </div>
               ) : (
                 <div

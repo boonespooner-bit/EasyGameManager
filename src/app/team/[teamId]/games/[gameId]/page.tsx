@@ -188,6 +188,62 @@ export default function GamePlanPage() {
     setRegenerating(false);
   };
 
+  // Handle unassigning a position: remove from held and regenerate
+  const handlePositionUnassign = async (inning: number, position: string) => {
+    const newHeld = heldPositions.filter(
+      (h) => !(h.inning === inning && h.position === position),
+    );
+    setHeldPositions(newHeld);
+
+    const lockedPitchers = pitchingMode
+      ? getCurrentPitchers()
+          .filter((p) => p.playerId !== null)
+          .map((p) => ({ playerId: p.playerId!, inning: p.inning }))
+      : [];
+
+    setRegenerating(true);
+
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lockedPitchers: lockedPitchers.length > 0 ? lockedPitchers : undefined,
+        lockedPositions: newHeld.length > 0 ? newHeld : undefined,
+      }),
+    });
+
+    if (res.ok) {
+      await fetchGame();
+    }
+
+    setRegenerating(false);
+  };
+
+  // Handle unassigning a pitcher: remove from pitching holds and regenerate
+  const handlePitcherUnassign = async (inning: number) => {
+    const currentPitchers = getCurrentPitchers();
+    const lockedPitchers = currentPitchers
+      .filter((p) => p.playerId !== null && p.inning !== inning)
+      .map((p) => ({ playerId: p.playerId!, inning: p.inning }));
+
+    setRegenerating(true);
+
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lockedPitchers: lockedPitchers.length > 0 ? lockedPitchers : undefined,
+        lockedPositions: heldPositions.length > 0 ? heldPositions : undefined,
+      }),
+    });
+
+    if (res.ok) {
+      await fetchGame();
+    }
+
+    setRegenerating(false);
+  };
+
   // Handle any position change: add to held positions and regenerate
   const handlePositionChange = async (inning: number, position: string, playerId: string) => {
     // Add or update held position
@@ -313,6 +369,8 @@ export default function GamePlanPage() {
         allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name }))}
         onPitcherChange={handlePitcherChange}
         onPositionChange={handlePositionChange}
+        onPositionUnassign={handlePositionUnassign}
+        onPitcherUnassign={handlePitcherUnassign}
         regenerating={regenerating}
         heldPositions={heldPositions}
       />
