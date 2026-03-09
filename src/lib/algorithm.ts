@@ -481,7 +481,7 @@ function assignBenchScheduleFlexible(
         });
 
       if (eligible.length === 0) {
-        // If we can't fill without violating consecutive rule, relax the constraint
+        // Relax the no-consecutive constraint
         const fallback = allBenchPlayers
           .filter((p) => playerBenchCount[p.id] < p.target)
           .filter((p) => !slots.includes(p.id))
@@ -496,8 +496,21 @@ function assignBenchScheduleFlexible(
             }
             return bRating - aRating;
           });
-        if (fallback.length === 0) break;
-        const chosen = fallback[0];
+        if (fallback.length > 0) {
+          const chosen = fallback[0];
+          slots.push(chosen.id);
+          playerBenchCount[chosen.id]++;
+          continue;
+        }
+
+        // All players at target — allow over-target to fill the required bench count
+        const overTarget = allBenchPlayers
+          .filter((p) => !slots.includes(p.id))
+          .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
+          .filter((p) => !lockedInThisInning.has(p.id))
+          .sort((a, b) => playerBenchCount[a.id] - playerBenchCount[b.id]);
+        if (overTarget.length === 0) break; // truly no one available
+        const chosen = overTarget[0];
         slots.push(chosen.id);
         playerBenchCount[chosen.id]++;
         continue;
