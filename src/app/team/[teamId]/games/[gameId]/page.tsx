@@ -56,6 +56,7 @@ export default function GamePlanPage() {
   const [saving, setSaving] = useState(false);
   const [pitchingMode, setPitchingMode] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [heldPositions, setHeldPositions] = useState<{ playerId: string; inning: number; position: string }[]>([]);
 
   const fetchGame = useCallback(async () => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -153,7 +154,7 @@ export default function GamePlanPage() {
     });
   };
 
-  // Handle pitcher change: regenerate entire lineup with locked pitchers
+  // Handle pitcher change: regenerate entire lineup with locked pitchers + held positions
   const handlePitcherChange = async (inning: number, playerId: string) => {
     const currentPitchers = getCurrentPitchers();
     const newPitchers = currentPitchers.map((p) => {
@@ -167,14 +168,51 @@ export default function GamePlanPage() {
     // Build locked pitchers array (only non-null ones)
     const lockedPitchers = newPitchers
       .filter((p) => p.playerId !== null)
-      .map((p) => ({ playerId: p.playerId, inning: p.inning }));
+      .map((p) => ({ playerId: p.playerId!, inning: p.inning }));
 
     setRegenerating(true);
 
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lockedPitchers }),
+      body: JSON.stringify({
+        lockedPitchers,
+        lockedPositions: heldPositions.length > 0 ? heldPositions : undefined,
+      }),
+    });
+
+    if (res.ok) {
+      await fetchGame();
+    }
+
+    setRegenerating(false);
+  };
+
+  // Handle any position change: add to held positions and regenerate
+  const handlePositionChange = async (inning: number, position: string, playerId: string) => {
+    // Add or update held position
+    const newHeld = [
+      ...heldPositions.filter((h) => !(h.inning === inning && h.position === position)),
+      { playerId, inning, position },
+    ];
+    setHeldPositions(newHeld);
+
+    // Build locked pitchers from pitching mode holds
+    const lockedPitchers = pitchingMode
+      ? getCurrentPitchers()
+          .filter((p) => p.playerId !== null)
+          .map((p) => ({ playerId: p.playerId!, inning: p.inning }))
+      : [];
+
+    setRegenerating(true);
+
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lockedPitchers: lockedPitchers.length > 0 ? lockedPitchers : undefined,
+        lockedPositions: newHeld,
+      }),
     });
 
     if (res.ok) {
@@ -210,6 +248,14 @@ export default function GamePlanPage() {
             <span className="text-xs text-gray-400">
               {regenerating ? "Regenerating lineup..." : "Saving..."}
             </span>
+          )}
+          {!game.isLocked && heldPositions.length > 0 && (
+            <button
+              onClick={() => setHeldPositions([])}
+              className="text-sm px-3 py-1.5 rounded-lg font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+            >
+              Clear Holds ({heldPositions.length})
+            </button>
           )}
           {!game.isLocked && (
             <button
@@ -266,7 +312,9 @@ export default function GamePlanPage() {
         pitchingMode={pitchingMode}
         allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name }))}
         onPitcherChange={handlePitcherChange}
+        onPositionChange={handlePositionChange}
         regenerating={regenerating}
+        heldPositions={heldPositions}
       />
     </div>
   );

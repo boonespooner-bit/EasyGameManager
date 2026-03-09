@@ -24,9 +24,12 @@ export async function POST(
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.isLocked) return NextResponse.json({ error: "Game is locked" }, { status: 400 });
 
-  const { lockedPitchers } = await req.json() as {
-    lockedPitchers: { playerId: string; inning: number }[];
+  const body = await req.json() as {
+    lockedPitchers?: { playerId: string; inning: number }[];
+    lockedPositions?: { playerId: string; inning: number; position: string }[];
   };
+  const lockedPitchers = body.lockedPitchers || [];
+  const lockedPositions = body.lockedPositions || [];
 
   // Get available players for this game
   const allPlayers = await prisma.player.findMany({
@@ -71,8 +74,13 @@ export async function POST(
     ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
   }));
 
-  // Regenerate with locked pitchers
-  const newAssignments = generateGamePlan(playersWithRatings, seasonHistory, lockedPitchers);
+  // Regenerate with locked pitchers and locked positions
+  const newAssignments = generateGamePlan(
+    playersWithRatings,
+    seasonHistory,
+    lockedPitchers.length > 0 ? lockedPitchers : undefined,
+    lockedPositions.length > 0 ? lockedPositions : undefined,
+  );
 
   // Save new assignments
   await prisma.inningAssignment.deleteMany({ where: { gameId } });
