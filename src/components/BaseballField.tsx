@@ -10,6 +10,12 @@ interface Assignment {
   position: FieldPosition;
 }
 
+interface HeldPosition {
+  playerId: string;
+  inning: number;
+  position: string;
+}
+
 interface Props {
   assignments: Assignment[];
   battingOrder: { playerId: string; playerName: string; order: number }[];
@@ -22,7 +28,9 @@ interface Props {
   pitchingMode?: boolean;
   allPlayers?: { id: string; name: string }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
+  onPositionChange?: (inning: number, position: string, playerId: string) => void;
   regenerating?: boolean;
+  heldPositions?: HeldPosition[];
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -49,7 +57,9 @@ export default function BaseballField({
   pitchingMode,
   allPlayers,
   onPitcherChange,
+  onPositionChange,
   regenerating,
+  heldPositions,
 }: Props) {
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +224,9 @@ export default function BaseballField({
               const coord = POSITION_COORDS[pos];
               const players = getPlayersAtPosition(pos);
               const isPitcher = pos === "P" && pitchingMode;
+              const heldInningsForPos = heldPositions
+                ? new Set(heldPositions.filter((h) => h.position === pos).map((h) => h.inning))
+                : undefined;
               return (
                 <div
                   key={pos}
@@ -235,6 +248,10 @@ export default function BaseballField({
                       onDragStart={handleDragStart}
                       onDrop={handleDrop}
                       isDragging={!!dragSource}
+                      allPlayers={allPlayers}
+                      onPositionChange={onPositionChange}
+                      disabled={regenerating}
+                      heldInnings={heldInningsForPos}
                     />
                   )}
                 </div>
@@ -246,28 +263,39 @@ export default function BaseballField({
           <div className="mt-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Bench</h3>
             <div className="grid grid-cols-6 gap-2">
-              {getBenchByInning().map(({ inning, players }) => (
-                <div
-                  key={inning}
-                  className="bg-gray-100 border border-gray-300 rounded p-2 min-h-[80px]"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => handleDrop("BENCH", inning)}
-                >
-                  <div className="text-xs font-bold text-gray-500 mb-1">Inn {inning}</div>
-                  {players.map((p) => (
-                    <div
-                      key={p.playerId}
-                      className="text-xs bg-white rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing"
-                      draggable={!isLocked}
-                      onDragStart={() => handleDragStart("BENCH", inning)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.stopPropagation(); handleDrop("BENCH", inning); }}
-                    >
-                      {p.name}
-                    </div>
-                  ))}
-                </div>
-              ))}
+              {getBenchByInning().map(({ inning, players }) => {
+                const benchHeld = heldPositions?.some((h) => h.position === "BENCH" && h.inning === inning);
+                return (
+                  <div
+                    key={inning}
+                    className={`bg-gray-100 border rounded p-2 min-h-[80px] ${benchHeld ? "border-amber-300" : "border-gray-300"}`}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleDrop("BENCH", inning)}
+                  >
+                    <div className="text-xs font-bold text-gray-500 mb-1">Inn {inning}</div>
+                    {players.map((p) => {
+                      const isPlayerHeld = heldPositions?.some(
+                        (h) => h.position === "BENCH" && h.inning === inning && h.playerId === p.playerId,
+                      );
+                      return (
+                        <div
+                          key={p.playerId}
+                          className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing ${
+                            isPlayerHeld ? "bg-amber-50 border-amber-300" : "bg-white"
+                          }`}
+                          draggable={!isLocked}
+                          onDragStart={() => handleDragStart("BENCH", inning)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => { e.stopPropagation(); handleDrop("BENCH", inning); }}
+                        >
+                          {isPlayerHeld && <span className="text-amber-500 text-[8px]">&#128274;</span>}
+                          {p.name}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -440,6 +468,10 @@ function PositionBox({
   onDragStart,
   onDrop,
   isDragging,
+  allPlayers,
+  onPositionChange,
+  disabled,
+  heldInnings,
 }: {
   position: string;
   players: ({ inning: number; playerId: string; name: string } | null)[];
@@ -447,29 +479,104 @@ function PositionBox({
   onDragStart: (pos: string, inning: number) => void;
   onDrop: (pos: string, inning: number) => void;
   isDragging: boolean;
+  allPlayers?: { id: string; name: string }[];
+  onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  disabled?: boolean;
+  heldInnings?: Set<number>;
 }) {
+  const [editingInning, setEditingInning] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filtered = search.trim()
+    ? (allPlayers || []).filter((p) =>
+        p.name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : (allPlayers || []);
+
+  const selectPlayer = (inning: number, playerId: string) => {
+    onPositionChange?.(inning, position, playerId);
+    setEditingInning(null);
+    setSearch("");
+  };
+
+  const canEdit = !isLocked && !!allPlayers && !!onPositionChange;
+
   return (
     <div className="bg-white/95 rounded shadow-md border border-gray-300 min-w-[90px]">
       <div className="bg-gray-800 text-white text-xs font-bold px-2 py-0.5 text-center rounded-t">
         {position}
       </div>
       <div className="p-1">
-        {players.map((p, i) => (
-          <div
-            key={i}
-            className={`flex items-center gap-1 text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
-              p ? "bg-blue-50 hover:bg-blue-100 cursor-grab active:cursor-grabbing" : "bg-gray-50"
-            } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
-            draggable={!isLocked && !!p}
-            onDragStart={() => p && onDragStart(position, p.inning)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => { e.stopPropagation(); onDrop(position, i + 1); }}
-          >
-            <span className="font-bold text-gray-400 w-3">{i + 1}.</span>
-            <span className="truncate">{p?.name || "\u2014"}</span>
-          </div>
-        ))}
+        {players.map((p, i) => {
+          const inning = i + 1;
+          const isEditing = editingInning === inning;
+          const isHeld = heldInnings?.has(inning);
+
+          return (
+            <div
+              key={i}
+              className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
+                isEditing ? "" : p
+                  ? `${isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
+                  : "bg-gray-50"
+              } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
+              draggable={!isLocked && !!p && !isEditing}
+              onDragStart={() => p && onDragStart(position, p.inning)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.stopPropagation(); onDrop(position, inning); }}
+            >
+              {isEditing ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onBlur={() => setTimeout(() => { setEditingInning(null); setSearch(""); }, 150)}
+                    className="w-full text-[10px] px-1 py-0.5 border border-blue-300 rounded outline-none"
+                    placeholder="Type name..."
+                    autoFocus
+                  />
+                  {filtered.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-32 overflow-y-auto mt-0.5">
+                      {filtered.map((pl) => (
+                        <button
+                          key={pl.id}
+                          className="block w-full text-left text-[10px] px-2 py-1 hover:bg-blue-50 truncate"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            selectPlayer(inning, pl.id);
+                          }}
+                        >
+                          {pl.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="flex items-center gap-1"
+                  onClick={() => {
+                    if (canEdit && !disabled) {
+                      setEditingInning(inning);
+                      setSearch("");
+                    }
+                  }}
+                >
+                  <span className="font-bold text-gray-400 w-3">{inning}.</span>
+                  {isHeld && <span className="text-amber-500 text-[8px]" title="Held">&#128274;</span>}
+                  <span className="truncate">{p?.name || "\u2014"}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+      {disabled && (
+        <div className="text-[8px] text-gray-500 text-center py-0.5 animate-pulse">
+          Updating...
+        </div>
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ export function generateGamePlan(
   players: PlayerWithRatings[],
   seasonHistory: SeasonHistory[],
   lockedPitchers?: { playerId: string; inning: number }[],
+  lockedPositions?: { playerId: string; inning: number; position: string }[],
 ): GameAssignment[] {
   if (players.length === 0) {
     return [];
@@ -27,11 +28,34 @@ export function generateGamePlan(
     gamePositionCounts[p.id] = {};
   });
 
-  // When pitchers are locked, ensure they are not benched in their pitching innings
+  // Build locked positions map: inning -> Map<playerId, position>
+  const allLockedByInning = new Map<number, Map<string, string>>();
+  for (const inning of INNINGS) {
+    allLockedByInning.set(inning, new Map());
+  }
+  if (lockedPositions && lockedPositions.length > 0) {
+    for (const lp of lockedPositions) {
+      allLockedByInning.get(lp.inning)?.set(lp.playerId, lp.position);
+    }
+  }
+
+  // Build set of locked player+inning combos so bench scheduler avoids them
+  const lockedPlayerInnings = new Map<number, Set<string>>(); // inning -> Set of playerIds
+  for (const inning of INNINGS) {
+    const playerIds = new Set<string>();
+    const locked = allLockedByInning.get(inning)!;
+    for (const playerId of locked.keys()) {
+      playerIds.add(playerId);
+    }
+    lockedPlayerInnings.set(inning, playerIds);
+  }
+
+  // Also include locked pitchers in the locked set
   const lockedPitcherInnings = new Map<number, string>(); // inning -> playerId
   if (lockedPitchers && lockedPitchers.length > 0) {
     for (const lp of lockedPitchers) {
       lockedPitcherInnings.set(lp.inning, lp.playerId);
+      lockedPlayerInnings.get(lp.inning)?.add(lp.playerId);
     }
   }
 
@@ -41,9 +65,25 @@ export function generateGamePlan(
     benchSchedule.set(inning, []);
   }
 
+  // Check for locked BENCH positions
+  const lockedBenchByInning = new Map<number, string[]>();
+  for (const inning of INNINGS) {
+    lockedBenchByInning.set(inning, []);
+  }
+  if (lockedPositions) {
+    for (const lp of lockedPositions) {
+      if (lp.position === "BENCH") {
+        lockedBenchByInning.get(lp.inning)?.push(lp.playerId);
+      }
+    }
+  }
+
   if (numPlayers > numPositions) {
     const benchPerInning = numPlayers - numPositions;
-    benchSchedule = assignBenchScheduleFlexible(players, historyMap, benchPerInning, lockedPitcherInnings);
+    benchSchedule = assignBenchScheduleFlexible(
+      players, historyMap, benchPerInning, lockedPitcherInnings,
+      lockedPlayerInnings, lockedBenchByInning,
+    );
   }
 
   // Add bench assignments
@@ -67,35 +107,63 @@ export function generateGamePlan(
     activeByInning.set(inning, players.filter((p) => !benchedIds.includes(p.id)));
   }
 
-  // Phase 1: Use locked pitchers if provided, otherwise auto-plan
-  const pitchingSchedule = (lockedPitchers && lockedPitchers.length > 0)
-    ? lockedPitchers
+  // Extract locked pitcher positions from lockedPositions
+  const lockedPitcherPositions = lockedPositions
+    ?.filter((lp) => lp.position === "P")
+    .map((lp) => ({ playerId: lp.playerId, inning: lp.inning })) || [];
+
+  // Merge lockedPitchers (from pitching mode) with locked P positions (from general holds)
+  const allLockedPitchers = [...(lockedPitchers || [])];
+  for (const lp of lockedPitcherPositions) {
+    if (!allLockedPitchers.some((p) => p.inning === lp.inning)) {
+      allLockedPitchers.push(lp);
+    }
+  }
+
+  // Phase 1: Use locked pitchers if any, otherwise auto-plan
+  const pitchingSchedule = allLockedPitchers.length > 0
+    ? allLockedPitchers
     : planPitchingSchedule(players, activeByInning, historyMap);
 
+  // Extract locked catcher positions
+  const lockedCatcherPositions = lockedPositions
+    ?.filter((lp) => lp.position === "C")
+    .map((lp) => ({ playerId: lp.playerId, inning: lp.inning })) || [];
+
   // Phase 2: Pre-plan catching schedule across all innings
-  // Preference: catchers should catch 2 consecutive innings when possible
-  const catchingSchedule = planCatchingSchedule(players, activeByInning, pitchingSchedule, historyMap);
+  const catchingSchedule = planCatchingSchedule(
+    players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions,
+  );
 
   // Phase 3: Assign remaining positions inning by inning
   // Lock in pitcher and catcher assignments first
-  const lockedAssignments = new Map<number, Map<string, string>>(); // inning -> playerId -> position
+  const phaseLockedAssignments = new Map<number, Map<string, string>>(); // inning -> playerId -> position
   for (const inning of INNINGS) {
-    lockedAssignments.set(inning, new Map());
+    phaseLockedAssignments.set(inning, new Map());
   }
 
   for (const { playerId, inning } of pitchingSchedule) {
-    lockedAssignments.get(inning)!.set(playerId, "P");
+    phaseLockedAssignments.get(inning)!.set(playerId, "P");
   }
   for (const { playerId, inning } of catchingSchedule) {
-    lockedAssignments.get(inning)!.set(playerId, "C");
+    phaseLockedAssignments.get(inning)!.set(playerId, "C");
+  }
+
+  // Also add any other locked field positions (non-P, non-C, non-BENCH)
+  if (lockedPositions) {
+    for (const lp of lockedPositions) {
+      if (lp.position !== "P" && lp.position !== "C" && lp.position !== "BENCH") {
+        phaseLockedAssignments.get(lp.inning)?.set(lp.playerId, lp.position);
+      }
+    }
   }
 
   // Now assign remaining field positions for each inning
   for (const inning of INNINGS) {
     const active = activeByInning.get(inning) || [];
-    const locked = lockedAssignments.get(inning)!;
+    const locked = phaseLockedAssignments.get(inning)!;
 
-    // Add locked (pitcher/catcher) assignments
+    // Add locked assignments
     for (const [playerId, position] of locked) {
       const player = players.find((p) => p.id === playerId)!;
       assignments.push({
@@ -107,11 +175,15 @@ export function generateGamePlan(
       gamePositionCounts[player.id][position] = (gamePositionCounts[player.id][position] || 0) + 1;
     }
 
-    // Assign remaining positions to remaining active players
+    // Collect positions already filled by locked assignments
     const assignedPlayers = new Set(locked.keys());
+    const filledPositions = new Set(locked.values());
     const importance = inningImportance(inning);
 
+    // Fill remaining positions with best available players
     for (const position of POSITION_PRIORITY) {
+      if (filledPositions.has(position)) continue; // Already locked
+
       let bestScore = -Infinity;
       let bestPlayer: PlayerWithRatings | null = null;
 
@@ -240,6 +312,7 @@ function planCatchingSchedule(
   activeByInning: Map<number, PlayerWithRatings[]>,
   pitchingSchedule: { playerId: string; inning: number }[],
   historyMap: Map<string, SeasonHistory>,
+  lockedCatchers: { playerId: string; inning: number }[] = [],
 ): { playerId: string; inning: number }[] {
   const schedule: { playerId: string; inning: number }[] = [];
   const innings = [...INNINGS];
@@ -248,7 +321,14 @@ function planCatchingSchedule(
     pitcherByInning.set(p.inning, p.playerId);
   }
 
+  // Pre-fill locked catchers
+  const lockedCatcherInnings = new Set<number>();
   const usedCatchers = new Set<string>();
+  for (const lc of lockedCatchers) {
+    schedule.push({ playerId: lc.playerId, inning: lc.inning });
+    lockedCatcherInnings.add(lc.inning);
+    usedCatchers.add(lc.playerId);
+  }
 
   // Score each player for catching
   const catchScores = players.map((p) => {
@@ -261,12 +341,20 @@ function planCatchingSchedule(
   let i = 0;
   while (i < innings.length) {
     const inning = innings[i];
+
+    // Skip innings that have locked catchers
+    if (lockedCatcherInnings.has(inning)) {
+      i += 1;
+      continue;
+    }
+
     const nextInning = i + 1 < innings.length ? innings[i + 1] : null;
+    const nextIsLocked = nextInning !== null && lockedCatcherInnings.has(nextInning);
 
     let assigned = false;
 
-    // Try 2 consecutive innings first (preferred)
-    if (nextInning !== null) {
+    // Try 2 consecutive innings first (preferred), only if next isn't locked
+    if (nextInning !== null && !nextIsLocked) {
       for (const { player } of catchScores) {
         if (usedCatchers.has(player.id)) continue;
         if (pitcherByInning.get(inning) === player.id) continue;
@@ -313,6 +401,8 @@ function assignBenchScheduleFlexible(
   historyMap: Map<string, SeasonHistory>,
   benchPerInning: number,
   lockedPitcherInnings: Map<number, string> = new Map(),
+  lockedPlayerInnings: Map<number, Set<string>> = new Map(),
+  lockedBenchByInning: Map<number, string[]> = new Map(),
 ): Map<number, string[]> {
   const totalBenchSlots = benchPerInning * INNINGS.length;
 
@@ -350,10 +440,24 @@ function assignBenchScheduleFlexible(
     playerBenchCount[p.id] = 0;
   });
 
+  // Pre-fill locked bench assignments
+  for (const inning of INNINGS) {
+    const lockedBench = lockedBenchByInning.get(inning) || [];
+    const slots = benchSlots.get(inning)!;
+    for (const playerId of lockedBench) {
+      if (!slots.includes(playerId)) {
+        slots.push(playerId);
+        playerBenchCount[playerId] = (playerBenchCount[playerId] || 0) + 1;
+      }
+    }
+  }
+
   // Assign bench in sequential inning order so we can enforce the
   // "no consecutive bench innings" rule
   for (const inning of INNINGS) {
     const slots = benchSlots.get(inning)!;
+    const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
+
     while (slots.length < benchPerInning) {
       const prevBenched = inning > 1 ? (benchSlots.get(inning - 1) || []) : [];
 
@@ -364,6 +468,8 @@ function assignBenchScheduleFlexible(
         .filter((p) => !prevBenched.includes(p.id))
         // Never bench a locked pitcher in their pitching inning
         .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
+        // Never bench a player locked into a field position in this inning
+        .filter((p) => !lockedInThisInning.has(p.id))
         .sort((a, b) => {
           const importance = inningImportance(inning);
           const aRating = playerAvgRating.get(a.id) || 5;
@@ -380,6 +486,7 @@ function assignBenchScheduleFlexible(
           .filter((p) => playerBenchCount[p.id] < p.target)
           .filter((p) => !slots.includes(p.id))
           .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
+          .filter((p) => !lockedInThisInning.has(p.id))
           .sort((a, b) => {
             const importance = inningImportance(inning);
             const aRating = playerAvgRating.get(a.id) || 5;
