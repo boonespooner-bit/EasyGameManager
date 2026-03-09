@@ -195,6 +195,10 @@ export function generateGamePlan(
 
         let score = rating * importance;
 
+        // Strongly penalize placing players in positions they're very weak at
+        if (rating <= 2) score -= 8;
+        else if (rating <= 3) score -= 3;
+
         const seasonCount = history?.positionCounts[position] ?? 0;
         const gameCount = gamePositionCounts[player.id][position] ?? 0;
         score -= seasonCount * 0.3;
