@@ -410,33 +410,65 @@ function assignBenchScheduleFlexible(
 ): Map<number, string[]> {
   const totalBenchSlots = benchPerInning * INNINGS.length;
 
-  const sorted = [...players].sort((a, b) => {
-    const aBench = historyMap.get(a.id)?.totalBenchInnings ?? 0;
-    const bBench = historyMap.get(b.id)?.totalBenchInnings ?? 0;
-    return aBench - bBench;
-  });
-
-  const avgBench = totalBenchSlots / players.length;
-  const baseBench = Math.floor(avgBench);
-  let extraSlots = totalBenchSlots - baseBench * players.length;
-
-  const allBenchPlayers = sorted.map((p) => {
-    const target = baseBench + (extraSlots > 0 ? 1 : 0);
-    if (extraSlots > 0) extraSlots--;
-    return { id: p.id, target };
-  });
-
-  const benchSlots: Map<number, string[]> = new Map();
-  for (const inning of INNINGS) {
-    benchSlots.set(inning, []);
-  }
-
+  // Calculate average rating for each player (used for bench priority)
   const playerAvgRating = new Map<string, number>();
   for (const p of players) {
     const avg = p.ratings.length > 0
       ? p.ratings.reduce((s, r) => s + r.rating, 0) / p.ratings.length
       : 5;
     playerAvgRating.set(p.id, avg);
+  }
+
+  // Sort by rating ascending: lowest-rated players should sit more
+  // Break ties by season bench history (fewer benched = bench more)
+  const sorted = [...players].sort((a, b) => {
+    const aRating = playerAvgRating.get(a.id) || 5;
+    const bRating = playerAvgRating.get(b.id) || 5;
+    if (aRating !== bRating) return aRating - bRating; // lower rating first
+    const aBench = historyMap.get(a.id)?.totalBenchInnings ?? 0;
+    const bBench = historyMap.get(b.id)?.totalBenchInnings ?? 0;
+    return aBench - bBench; // fewer season benches = bench more this game
+  });
+
+  // Assign bench targets based on rating:
+  // - Lowest-rated players sit 2x (max), highest-rated sit 1x (min, if slots require it)
+  // - sorted is already ordered low→high by rating
+  // - No player sits more than 2 innings per game
+  const maxBench = 2;
+  let remaining = totalBenchSlots;
+  const targetMap = new Map<string, number>();
+
+  // Figure out minimum everyone must sit:
+  // If totalBenchSlots > numPlayers, everyone must sit at least 1
+  const numPlayers = players.length;
+  const guaranteedMin = totalBenchSlots > numPlayers ? 1 : 0;
+
+  // Initialize: if everyone must sit, give each player 1 first
+  for (const p of sorted) {
+    const base = Math.min(guaranteedMin, remaining);
+    targetMap.set(p.id, base);
+    remaining -= base;
+  }
+
+  // Distribute remaining slots to lowest-rated players first, up to maxBench
+  for (const p of sorted) {
+    if (remaining <= 0) break;
+    const current = targetMap.get(p.id)!;
+    const give = Math.min(maxBench - current, remaining);
+    if (give > 0) {
+      targetMap.set(p.id, current + give);
+      remaining -= give;
+    }
+  }
+
+  const allBenchPlayers = sorted.map((p) => ({
+    id: p.id,
+    target: targetMap.get(p.id) || 0,
+  }));
+
+  const benchSlots: Map<number, string[]> = new Map();
+  for (const inning of INNINGS) {
+    benchSlots.set(inning, []);
   }
 
   const playerBenchCount: Record<string, number> = {};
@@ -475,13 +507,10 @@ function assignBenchScheduleFlexible(
         // Never bench a player locked into a field position in this inning
         .filter((p) => !lockedInThisInning.has(p.id))
         .sort((a, b) => {
-          const importance = inningImportance(inning);
+          // Prefer benching lower-rated players first
           const aRating = playerAvgRating.get(a.id) || 5;
           const bRating = playerAvgRating.get(b.id) || 5;
-          if (importance > 1) {
-            return aRating - bRating;
-          }
-          return bRating - aRating;
+          return aRating - bRating;
         });
 
       if (eligible.length === 0) {
@@ -492,13 +521,9 @@ function assignBenchScheduleFlexible(
           .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
           .filter((p) => !lockedInThisInning.has(p.id))
           .sort((a, b) => {
-            const importance = inningImportance(inning);
             const aRating = playerAvgRating.get(a.id) || 5;
             const bRating = playerAvgRating.get(b.id) || 5;
-            if (importance > 1) {
-              return aRating - bRating;
-            }
-            return bRating - aRating;
+            return aRating - bRating;
           });
         if (fallback.length > 0) {
           const chosen = fallback[0];
