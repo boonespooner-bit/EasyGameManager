@@ -305,7 +305,7 @@ export default function GamePlanPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="no-print flex items-center justify-between mb-4">
         <Link
           href={`/team/${teamId}/games`}
           className="text-sm text-green-700 hover:underline"
@@ -326,6 +326,12 @@ export default function GamePlanPage() {
               Clear Holds ({heldPositions.length})
             </button>
           )}
+          <button
+            onClick={() => window.print()}
+            className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors no-print"
+          >
+            Print
+          </button>
           {!game.isLocked && (
             <button
               onClick={() => setPitchingMode(!pitchingMode)}
@@ -352,7 +358,7 @@ export default function GamePlanPage() {
       </div>
 
       {((game.exclusions && game.exclusions.length > 0) || (game.poolPlayers && game.poolPlayers.length > 0)) && (
-        <div className="flex flex-wrap gap-2 mb-3 text-xs">
+        <div className="no-print flex flex-wrap gap-2 mb-3 text-xs">
           {game.exclusions && game.exclusions.length > 0 && (
             <span className="bg-red-50 text-red-700 px-2 py-1 rounded">
               Absent: {game.exclusions.map((e) => {
