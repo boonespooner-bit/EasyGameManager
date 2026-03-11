@@ -178,74 +178,145 @@ export default function BaseballField({
   );
 
   // Build data for print view
-  const allPositionsForPrint = [...POSITIONS, "BENCH" as const];
+  const getBenchForPrint = () => {
+    return INNINGS.map((inning) => ({
+      inning,
+      players: assignments
+        .filter((a) => a.position === "BENCH" && a.inning === inning)
+        .map((a) => a.playerName),
+    }));
+  };
+
+  const getPlayersForPrint = (position: string) => {
+    return INNINGS.map((inning) => {
+      const a = assignments.find((a) => a.position === position && a.inning === inning);
+      return a ? a.playerName : "\u2014";
+    });
+  };
+
+  // Print position coordinates (percentage-based, same layout as screen)
+  const PRINT_COORDS: Record<string, { x: number; y: number }> = {
+    P:  { x: 50, y: 56 },
+    C:  { x: 50, y: 78 },
+    "1B": { x: 73, y: 53 },
+    "2B": { x: 63, y: 40 },
+    SS: { x: 37, y: 40 },
+    "3B": { x: 27, y: 53 },
+    LF: { x: 16, y: 22 },
+    CF: { x: 50, y: 12 },
+    RF: { x: 84, y: 22 },
+  };
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Print-only tabular view */}
+      {/* Print-only field view */}
       <div className="print-only hidden">
-        <div className="text-center mb-3">
-          <h1 style={{ fontSize: "18px", fontWeight: "bold", margin: 0 }}>
+        <div style={{ textAlign: "center", marginBottom: "6px" }}>
+          <h1 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>
             {teamName} vs. {opponent}
           </h1>
-          <p style={{ fontSize: "12px", color: "#555", margin: "2px 0" }}>
+          <p style={{ fontSize: "11px", color: "#555", margin: "2px 0" }}>
             {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
           </p>
         </div>
 
-        {/* Position × Inning grid */}
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", marginBottom: "12px" }}>
-          <thead>
-            <tr>
-              <th style={{ border: "1px solid #333", padding: "4px 6px", backgroundColor: "#e5e7eb", textAlign: "left", width: "60px" }}>
-                Pos
-              </th>
-              {INNINGS.map((inn) => (
-                <th key={inn} style={{ border: "1px solid #333", padding: "4px 6px", backgroundColor: "#e5e7eb", textAlign: "center" }}>
-                  Inn {inn}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {allPositionsForPrint.map((pos) => (
-              <tr key={pos}>
-                <td style={{ border: "1px solid #333", padding: "3px 6px", fontWeight: "bold", backgroundColor: pos === "BENCH" ? "#f3f4f6" : "#fff" }}>
-                  {pos}
-                </td>
-                {INNINGS.map((inning) => {
-                  const playersInSlot = assignments.filter(
-                    (a) => a.position === pos && a.inning === inning,
-                  );
-                  return (
-                    <td key={inning} style={{ border: "1px solid #333", padding: "3px 6px", textAlign: "center" }}>
-                      {playersInSlot.map((a) => a.playerName).join(", ") || "\u2014"}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Field with position boxes */}
+        <div style={{ position: "relative", width: "100%", paddingBottom: "85%", border: "1px solid #ccc", borderRadius: "8px", marginBottom: "8px", overflow: "hidden" }}>
+          {/* Field background SVG */}
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} viewBox="0 0 100 90">
+            {/* Grass */}
+            <rect x="0" y="0" width="100" height="90" fill="#e8f5e9" />
+            {/* Outfield arc */}
+            <path d="M 8 48 Q 8 4, 50 4 Q 92 4, 92 48" fill="none" stroke="#aaa" strokeWidth="0.3" />
+            {/* Infield dirt */}
+            <polygon points="50,32 70,52 50,72 30,52" fill="#f5e6d3" stroke="#999" strokeWidth="0.2" />
+            {/* Base paths */}
+            <line x1="50" y1="72" x2="70" y2="52" stroke="#999" strokeWidth="0.2" />
+            <line x1="70" y1="52" x2="50" y2="32" stroke="#999" strokeWidth="0.2" />
+            <line x1="50" y1="32" x2="30" y2="52" stroke="#999" strokeWidth="0.2" />
+            <line x1="30" y1="52" x2="50" y2="72" stroke="#999" strokeWidth="0.2" />
+            {/* Bases */}
+            <rect x="49" y="71" width="2" height="2" fill="#999" transform="rotate(45 50 72)" />
+            <rect x="69" y="51" width="2" height="2" fill="#999" transform="rotate(45 70 52)" />
+            <rect x="49" y="31" width="2" height="2" fill="#999" transform="rotate(45 50 32)" />
+            <rect x="29" y="51" width="2" height="2" fill="#999" transform="rotate(45 30 52)" />
+            <circle cx="50" cy="52" r="1" fill="#d4b896" />
+          </svg>
 
-        {/* Batting Order */}
-        <div style={{ display: "flex", gap: "24px" }}>
-          <div>
-            <h3 style={{ fontSize: "13px", fontWeight: "bold", marginBottom: "4px" }}>Batting Order</h3>
-            <table style={{ borderCollapse: "collapse", fontSize: "11px" }}>
-              <tbody>
-                {battingOrder.map((b) => (
-                  <tr key={b.playerId}>
-                    <td style={{ border: "1px solid #999", padding: "2px 8px", fontWeight: "bold", color: "#666", width: "24px", textAlign: "right" }}>
-                      {b.order}
-                    </td>
-                    <td style={{ border: "1px solid #999", padding: "2px 8px" }}>
-                      {b.playerName}
-                    </td>
-                  </tr>
+          {/* Position boxes */}
+          {POSITIONS.map((pos) => {
+            const coord = PRINT_COORDS[pos];
+            const players = getPlayersForPrint(pos);
+            return (
+              <div
+                key={pos}
+                style={{
+                  position: "absolute",
+                  left: `${coord.x}%`,
+                  top: `${coord.y}%`,
+                  transform: "translate(-50%, -50%)",
+                  border: "1px solid #333",
+                  borderRadius: "3px",
+                  backgroundColor: "#fff",
+                  minWidth: "70px",
+                  fontSize: "8px",
+                  lineHeight: "1.3",
+                }}
+              >
+                <div style={{
+                  backgroundColor: "#333",
+                  color: "#fff",
+                  textAlign: "center",
+                  fontWeight: "bold",
+                  padding: "1px 4px",
+                  fontSize: "8px",
+                  borderRadius: "2px 2px 0 0",
+                }}>
+                  {pos}
+                </div>
+                <div style={{ padding: "1px 3px" }}>
+                  {players.map((name, i) => (
+                    <div key={i} style={{ display: "flex", gap: "3px", padding: "0.5px 0" }}>
+                      <span style={{ fontWeight: "bold", color: "#888", width: "10px", textAlign: "right" }}>{i + 1}.</span>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bench boxes */}
+        <div style={{ marginBottom: "8px" }}>
+          <div style={{ fontSize: "11px", fontWeight: "bold", marginBottom: "3px" }}>Bench</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px" }}>
+            {getBenchForPrint().map(({ inning, players }) => (
+              <div key={inning} style={{
+                border: "1px solid #333",
+                borderRadius: "3px",
+                padding: "3px 4px",
+                minHeight: "40px",
+                fontSize: "8px",
+              }}>
+                <div style={{ fontWeight: "bold", color: "#666", marginBottom: "2px", fontSize: "8px" }}>Inn {inning}</div>
+                {players.map((name, i) => (
+                  <div key={i} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Batting Order - horizontal to save space */}
+        <div>
+          <div style={{ fontSize: "11px", fontWeight: "bold", marginBottom: "3px" }}>Batting Order</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: "9px" }}>
+            {battingOrder.map((b) => (
+              <span key={b.playerId}>
+                <span style={{ fontWeight: "bold", color: "#666" }}>{b.order}.</span> {b.playerName}
+              </span>
+            ))}
           </div>
         </div>
       </div>
