@@ -177,10 +177,82 @@ export default function BaseballField({
     [dragSource, assignments, isLocked, onUpdate],
   );
 
+  // Build data for print view
+  const allPositionsForPrint = [...POSITIONS, "BENCH" as const];
+
   return (
     <div className="max-w-6xl mx-auto">
+      {/* Print-only tabular view */}
+      <div className="print-only hidden">
+        <div className="text-center mb-3">
+          <h1 style={{ fontSize: "18px", fontWeight: "bold", margin: 0 }}>
+            {teamName} vs. {opponent}
+          </h1>
+          <p style={{ fontSize: "12px", color: "#555", margin: "2px 0" }}>
+            {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+          </p>
+        </div>
+
+        {/* Position × Inning grid */}
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", marginBottom: "12px" }}>
+          <thead>
+            <tr>
+              <th style={{ border: "1px solid #333", padding: "4px 6px", backgroundColor: "#e5e7eb", textAlign: "left", width: "60px" }}>
+                Pos
+              </th>
+              {INNINGS.map((inn) => (
+                <th key={inn} style={{ border: "1px solid #333", padding: "4px 6px", backgroundColor: "#e5e7eb", textAlign: "center" }}>
+                  Inn {inn}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allPositionsForPrint.map((pos) => (
+              <tr key={pos}>
+                <td style={{ border: "1px solid #333", padding: "3px 6px", fontWeight: "bold", backgroundColor: pos === "BENCH" ? "#f3f4f6" : "#fff" }}>
+                  {pos}
+                </td>
+                {INNINGS.map((inning) => {
+                  const playersInSlot = assignments.filter(
+                    (a) => a.position === pos && a.inning === inning,
+                  );
+                  return (
+                    <td key={inning} style={{ border: "1px solid #333", padding: "3px 6px", textAlign: "center" }}>
+                      {playersInSlot.map((a) => a.playerName).join(", ") || "\u2014"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Batting Order */}
+        <div style={{ display: "flex", gap: "24px" }}>
+          <div>
+            <h3 style={{ fontSize: "13px", fontWeight: "bold", marginBottom: "4px" }}>Batting Order</h3>
+            <table style={{ borderCollapse: "collapse", fontSize: "11px" }}>
+              <tbody>
+                {battingOrder.map((b) => (
+                  <tr key={b.playerId}>
+                    <td style={{ border: "1px solid #999", padding: "2px 8px", fontWeight: "bold", color: "#666", width: "24px", textAlign: "right" }}>
+                      {b.order}
+                    </td>
+                    <td style={{ border: "1px solid #999", padding: "2px 8px" }}>
+                      {b.playerName}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Screen-only content below */}
       {/* Title */}
-      <div className="text-center mb-4">
+      <div className="text-center mb-4 no-print">
         {editingGameInfo ? (
           <div className="inline-flex flex-col items-center gap-2">
             <div className="flex items-center gap-2">
@@ -266,17 +338,17 @@ export default function BaseballField({
 
       {/* Error banner */}
       {error && (
-        <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2 rounded-lg mb-4 text-sm flex items-center justify-between">
+        <div className="no-print bg-red-50 border border-red-300 text-red-700 px-4 py-2 rounded-lg mb-4 text-sm flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 font-bold ml-4">&times;</button>
         </div>
       )}
 
       {!isLocked && (
-        <p className="text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
+        <p className="no-print text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
       )}
 
-      <div className="flex gap-6">
+      <div className="no-print flex gap-6">
         {/* Field */}
         <div className="flex-1">
           <div className="relative bg-green-600 rounded-2xl" style={{ paddingBottom: "100%" }}>

@@ -1,1 +1,31 @@
 @import "tailwindcss";
+
+@media print {
+  /* Hide interactive/screen-only elements */
+  .no-print,
+  nav,
+  button,
+  .cursor-grab,
+  .cursor-pointer {
+    display: none !important;
+  }
+
+  /* Show print-only elements */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Reset page margins for 8.5x11 */
+  @page {
+    size: letter;
+    margin: 0.4in;
+  }
+
+  body {
+    font-size: 11px;
+    color: #000;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
