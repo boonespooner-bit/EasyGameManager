@@ -439,9 +439,9 @@ function assignBenchScheduleFlexible(
   const targetMap = new Map<string, number>();
 
   // Figure out minimum everyone must sit:
-  // If totalBenchSlots > numPlayers, everyone must sit at least 1
+  // If totalBenchSlots >= numPlayers, everyone must sit at least 1
   const numPlayers = players.length;
-  const guaranteedMin = totalBenchSlots > numPlayers ? 1 : 0;
+  const guaranteedMin = totalBenchSlots >= numPlayers ? 1 : 0;
 
   // Initialize: if everyone must sit, give each player 1 first
   for (const p of sorted) {
@@ -548,6 +548,70 @@ function assignBenchScheduleFlexible(
       const chosen = eligible[0];
       slots.push(chosen.id);
       playerBenchCount[chosen.id]++;
+    }
+  }
+
+  // Post-processing: ensure every player with target >= 1 actually sits at least once.
+  // If a player was never benched (due to locked positions blocking them in every chosen inning),
+  // swap them into a bench slot by replacing a player who has benched more than their minimum.
+  const unbenchedPlayers = allBenchPlayers.filter(
+    (p) => p.target >= 1 && playerBenchCount[p.id] === 0,
+  );
+
+  for (const unbenched of unbenchedPlayers) {
+    let swapped = false;
+
+    // Find an inning where this player is NOT locked into a field position
+    for (const inning of INNINGS) {
+      if (swapped) break;
+      const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
+      if (lockedInThisInning.has(unbenched.id)) continue;
+      if (lockedPitcherInnings.get(inning) === unbenched.id) continue;
+
+      const slots = benchSlots.get(inning)!;
+      if (slots.includes(unbenched.id)) continue;
+
+      // Find someone in this inning's bench who has benched > 1 times and can be swapped out
+      for (let si = 0; si < slots.length; si++) {
+        const swapCandidate = slots[si];
+        if (playerBenchCount[swapCandidate] <= 1) continue;
+        // Don't swap out a locked bench player
+        const lockedBench = lockedBenchByInning.get(inning) || [];
+        if (lockedBench.includes(swapCandidate)) continue;
+
+        // Perform swap
+        slots[si] = unbenched.id;
+        playerBenchCount[unbenched.id]++;
+        playerBenchCount[swapCandidate]--;
+        swapped = true;
+        break;
+      }
+    }
+
+    // If no swap was possible (everyone only benched once), add to a slot
+    // by replacing someone in an inning where neither player is locked
+    if (!swapped) {
+      for (const inning of INNINGS) {
+        if (swapped) break;
+        const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
+        if (lockedInThisInning.has(unbenched.id)) continue;
+        if (lockedPitcherInnings.get(inning) === unbenched.id) continue;
+
+        const slots = benchSlots.get(inning)!;
+        if (slots.includes(unbenched.id)) continue;
+
+        for (let si = 0; si < slots.length; si++) {
+          const swapCandidate = slots[si];
+          const lockedBench = lockedBenchByInning.get(inning) || [];
+          if (lockedBench.includes(swapCandidate)) continue;
+
+          slots[si] = unbenched.id;
+          playerBenchCount[unbenched.id]++;
+          playerBenchCount[swapCandidate]--;
+          swapped = true;
+          break;
+        }
+      }
     }
   }
 
