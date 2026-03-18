@@ -117,7 +117,7 @@ model Game {
   poolPlayers   Player[]           @relation("PoolPlayers")
   exclusions    GameExclusion[]
   battingOrders GameBattingOrder[]
-  gameBall      GameBall?
+  gameBalls     GameBall[]
 }
 
 model GameExclusion {
@@ -154,7 +154,7 @@ model InningAssignment {
 
 model GameBall {
   id       String @id @default(cuid())
-  gameId   String @unique
+  gameId   String
   playerId String
   reason   String
   game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)

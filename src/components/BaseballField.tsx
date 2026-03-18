@@ -17,6 +17,7 @@ interface HeldPosition {
 }
 
 interface GameBallData {
+  id: string;
   playerId: string;
   playerName: string;
   reason: string;
@@ -40,9 +41,9 @@ interface Props {
   regenerating?: boolean;
   heldPositions?: HeldPosition[];
   onGameInfoUpdate?: (opponent: string, date: string) => void;
-  gameBall?: GameBallData | null;
-  onGameBallUpdate?: (playerId: string, reason: string) => void;
-  onGameBallRemove?: () => void;
+  gameBalls?: GameBallData[];
+  onGameBallUpdate?: (playerId: string, reason: string, id?: string) => void;
+  onGameBallRemove?: (id: string) => void;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -75,7 +76,7 @@ export default function BaseballField({
   regenerating,
   heldPositions,
   onGameInfoUpdate,
-  gameBall,
+  gameBalls = [],
   onGameBallUpdate,
   onGameBallRemove,
 }: Props) {
@@ -86,9 +87,9 @@ export default function BaseballField({
   const [editingGameInfo, setEditingGameInfo] = useState(false);
   const [editOpponent, setEditOpponent] = useState(opponent);
   const [editDate, setEditDate] = useState(date);
-  const [editingGameBall, setEditingGameBall] = useState(false);
-  const [gameBallPlayerId, setGameBallPlayerId] = useState(gameBall?.playerId || "");
-  const [gameBallReason, setGameBallReason] = useState(gameBall?.reason || "");
+  const [editingGameBallIndex, setEditingGameBallIndex] = useState<number | null>(null);
+  const [gameBallPlayerId, setGameBallPlayerId] = useState("");
+  const [gameBallReason, setGameBallReason] = useState("");
 
   const getPlayersAtPosition = (position: string) => {
     return INNINGS.map((inning) => {
@@ -335,13 +336,15 @@ export default function BaseballField({
           </div>
         </div>
 
-        {/* Game Ball - print */}
-        {gameBall && (
+        {/* Game Balls - print */}
+        {gameBalls.length > 0 && (
           <div style={{ marginTop: "8px", padding: "6px 8px", border: "1px solid #d4a017", borderRadius: "4px", backgroundColor: "#fef9e7" }}>
-            <div style={{ fontSize: "11px", fontWeight: "bold", marginBottom: "2px" }}>Game Ball</div>
-            <div style={{ fontSize: "9px" }}>
-              <span style={{ fontWeight: "bold" }}>{gameBall.playerName}</span> &mdash; {gameBall.reason}
-            </div>
+            <div style={{ fontSize: "11px", fontWeight: "bold", marginBottom: "2px" }}>{gameBalls.length === 1 ? "Game Ball" : "Game Balls"}</div>
+            {gameBalls.map((gb) => (
+              <div key={gb.id} style={{ fontSize: "9px", marginBottom: "2px" }}>
+                <span style={{ fontWeight: "bold" }}>{gb.playerName}</span> &mdash; {gb.reason}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -550,34 +553,66 @@ export default function BaseballField({
             </div>
           </div>
 
-          {/* Game Ball */}
-          <GameBallSection
-            gameBall={gameBall}
-            allPlayers={allPlayers}
-            editing={editingGameBall}
-            selectedPlayerId={gameBallPlayerId}
-            reason={gameBallReason}
-            onStartEdit={() => {
-              setGameBallPlayerId(gameBall?.playerId || "");
-              setGameBallReason(gameBall?.reason || "");
-              setEditingGameBall(true);
-            }}
-            onCancel={() => setEditingGameBall(false)}
-            onPlayerChange={setGameBallPlayerId}
-            onReasonChange={setGameBallReason}
-            onSave={() => {
-              if (gameBallPlayerId && gameBallReason.trim() && onGameBallUpdate) {
-                onGameBallUpdate(gameBallPlayerId, gameBallReason.trim());
-                setEditingGameBall(false);
-              }
-            }}
-            onRemove={() => {
-              onGameBallRemove?.();
-              setEditingGameBall(false);
-              setGameBallPlayerId("");
-              setGameBallReason("");
-            }}
-          />
+          {/* Game Balls */}
+          {gameBalls.map((gb, idx) => (
+            <GameBallSection
+              key={gb.id}
+              gameBall={gb}
+              allPlayers={allPlayers}
+              editing={editingGameBallIndex === idx}
+              selectedPlayerId={gameBallPlayerId}
+              reason={gameBallReason}
+              label={gameBalls.length === 2 ? `Game Ball #${idx + 1}` : "Game Ball"}
+              onStartEdit={() => {
+                setGameBallPlayerId(gb.playerId);
+                setGameBallReason(gb.reason);
+                setEditingGameBallIndex(idx);
+              }}
+              onCancel={() => setEditingGameBallIndex(null)}
+              onPlayerChange={setGameBallPlayerId}
+              onReasonChange={setGameBallReason}
+              onSave={() => {
+                if (gameBallPlayerId && gameBallReason.trim() && onGameBallUpdate) {
+                  onGameBallUpdate(gameBallPlayerId, gameBallReason.trim(), gb.id);
+                  setEditingGameBallIndex(null);
+                }
+              }}
+              onRemove={() => {
+                onGameBallRemove?.(gb.id);
+                setEditingGameBallIndex(null);
+                setGameBallPlayerId("");
+                setGameBallReason("");
+              }}
+            />
+          ))}
+          {gameBalls.length < 2 && (
+            <GameBallSection
+              allPlayers={allPlayers}
+              editing={editingGameBallIndex === -1}
+              selectedPlayerId={gameBallPlayerId}
+              reason={gameBallReason}
+              label={gameBalls.length === 1 ? "Game Ball #2" : undefined}
+              onStartEdit={() => {
+                setGameBallPlayerId("");
+                setGameBallReason("");
+                setEditingGameBallIndex(-1);
+              }}
+              onCancel={() => setEditingGameBallIndex(null)}
+              onPlayerChange={setGameBallPlayerId}
+              onReasonChange={setGameBallReason}
+              onSave={() => {
+                if (gameBallPlayerId && gameBallReason.trim() && onGameBallUpdate) {
+                  onGameBallUpdate(gameBallPlayerId, gameBallReason.trim());
+                  setEditingGameBallIndex(null);
+                }
+              }}
+              onRemove={() => {
+                setEditingGameBallIndex(null);
+                setGameBallPlayerId("");
+                setGameBallReason("");
+              }}
+            />
+          )}
         </div>
 
         {/* Batting Order */}
@@ -889,6 +924,7 @@ function GameBallSection({
   editing,
   selectedPlayerId,
   reason,
+  label,
   onStartEdit,
   onCancel,
   onPlayerChange,
@@ -901,6 +937,7 @@ function GameBallSection({
   editing: boolean;
   selectedPlayerId: string;
   reason: string;
+  label?: string;
   onStartEdit: () => void;
   onCancel: () => void;
   onPlayerChange: (id: string) => void;
@@ -911,7 +948,7 @@ function GameBallSection({
   if (editing) {
     return (
       <div className="mt-4 bg-yellow-50 border border-yellow-300 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-yellow-800 mb-3">Game Ball Award</h3>
+        <h3 className="text-sm font-semibold text-yellow-800 mb-3">{label || "Game Ball"} Award</h3>
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Player</label>
@@ -969,7 +1006,7 @@ function GameBallSection({
       <div className="mt-4 bg-yellow-50 border border-yellow-300 rounded-lg p-4">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-yellow-800 mb-1">Game Ball</h3>
+            <h3 className="text-sm font-semibold text-yellow-800 mb-1">{label || "Game Ball"}</h3>
             <p className="text-sm">
               <span className="font-bold">{gameBall.playerName}</span> &mdash; {gameBall.reason}
             </p>
