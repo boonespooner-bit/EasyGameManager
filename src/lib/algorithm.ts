@@ -225,10 +225,12 @@ export function generateGamePlan(
       }
 
       // Fallback: if DNP filtering left no candidate, pick any unassigned player
+      // but still respect DNP — only override as absolute last resort
       if (!bestPlayer) {
         for (const player of active) {
           if (assignedPlayers.has(player.id)) continue;
           const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+          if (rating === 0) continue; // Still respect DNP in fallback
           const history = historyMap.get(player.id);
           let score = rating * importance;
           if (rating <= 2) score -= 8;
@@ -253,12 +255,35 @@ export function generateGamePlan(
           position,
         });
         assignedPlayers.add(bestPlayer.id);
+        filledPositions.add(position);
         gamePositionCounts[bestPlayer.id][position] = (gamePositionCounts[bestPlayer.id][position] || 0) + 1;
       }
     }
 
     // Safety: assign any remaining unassigned active players to unfilled positions
+    // Respect DNP — skip positions where the player has rating 0
     const allPositions: (Position | "BENCH")[] = ["P", "C", ...POSITION_PRIORITY];
+    for (const player of active) {
+      if (assignedPlayers.has(player.id)) continue;
+      for (const position of allPositions) {
+        if (filledPositions.has(position)) continue;
+        const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+        if (rating === 0) continue; // Respect DNP
+        assignments.push({
+          playerId: player.id,
+          playerName: player.name,
+          inning,
+          position: position as Position,
+        });
+        assignedPlayers.add(player.id);
+        filledPositions.add(position);
+        gamePositionCounts[player.id][position] = (gamePositionCounts[player.id][position] || 0) + 1;
+        break;
+      }
+    }
+
+    // Absolute last resort: if positions are STILL unfilled (all remaining players
+    // have DNP for all remaining positions), override DNP to avoid blank spots
     for (const player of active) {
       if (assignedPlayers.has(player.id)) continue;
       for (const position of allPositions) {
