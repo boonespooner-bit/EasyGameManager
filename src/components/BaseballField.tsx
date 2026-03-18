@@ -91,6 +91,59 @@ export default function BaseballField({
   const [gameBallPlayerId, setGameBallPlayerId] = useState("");
   const [gameBallReason, setGameBallReason] = useState("");
 
+  // Build bench color map: players sitting 2 innings get a shared color
+  const benchColorMap = (() => {
+    const benchCounts: Record<string, number> = {};
+    for (const a of assignments) {
+      if (a.position === "BENCH") {
+        benchCounts[a.playerId] = (benchCounts[a.playerId] || 0) + 1;
+      }
+    }
+    const colors = [
+      { bg: "bg-purple-100", border: "border-purple-300", text: "text-purple-700" },
+      { bg: "bg-teal-100", border: "border-teal-300", text: "text-teal-700" },
+      { bg: "bg-orange-100", border: "border-orange-300", text: "text-orange-700" },
+      { bg: "bg-pink-100", border: "border-pink-300", text: "text-pink-700" },
+      { bg: "bg-cyan-100", border: "border-cyan-300", text: "text-cyan-700" },
+      { bg: "bg-lime-100", border: "border-lime-300", text: "text-lime-700" },
+    ];
+    const map: Record<string, typeof colors[0]> = {};
+    let colorIdx = 0;
+    for (const [playerId, count] of Object.entries(benchCounts)) {
+      if (count >= 2) {
+        map[playerId] = colors[colorIdx % colors.length];
+        colorIdx++;
+      }
+    }
+    return map;
+  })();
+
+  // Print-view bench color map (name-based, inline styles for print)
+  const printBenchColors = (() => {
+    const benchCounts: Record<string, number> = {};
+    const nameMap: Record<string, string> = {};
+    for (const a of assignments) {
+      if (a.position === "BENCH") {
+        benchCounts[a.playerId] = (benchCounts[a.playerId] || 0) + 1;
+        nameMap[a.playerName] = a.playerId;
+      }
+    }
+    const colors = ["#e9d5ff", "#ccfbf1", "#ffedd5", "#fce7f3", "#cffafe", "#ecfccb"];
+    const map: Record<string, string> = {};
+    let colorIdx = 0;
+    for (const [playerId, count] of Object.entries(benchCounts)) {
+      if (count >= 2) {
+        map[playerId] = colors[colorIdx % colors.length];
+        colorIdx++;
+      }
+    }
+    const nameColorMap: Record<string, string> = {};
+    for (const [name, id] of Object.entries(nameMap)) {
+      if (map[id]) nameColorMap[name] = map[id];
+    }
+    return nameColorMap;
+  })();
+
   const getPlayersAtPosition = (position: string) => {
     return INNINGS.map((inning) => {
       const a = assignments.find((a) => a.position === position && a.inning === inning);
@@ -316,9 +369,19 @@ export default function BaseballField({
                 fontSize: "8px",
               }}>
                 <div style={{ fontWeight: "bold", color: "#666", marginBottom: "2px", fontSize: "8px" }}>Inn {inning}</div>
-                {players.map((name, i) => (
-                  <div key={i} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-                ))}
+                {players.map((name, i) => {
+                  const bgColor = printBenchColors[name];
+                  return (
+                    <div key={i} style={{
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      backgroundColor: bgColor || "transparent",
+                      borderRadius: bgColor ? "2px" : undefined,
+                      padding: bgColor ? "0 2px" : undefined,
+                    }}>{name}</div>
+                  );
+                })}
               </div>
             ))}
           </div>
@@ -531,11 +594,16 @@ export default function BaseballField({
                       const isPlayerHeld = heldPositions?.some(
                         (h) => h.position === "BENCH" && h.inning === inning && h.playerId === p.playerId,
                       );
+                      const benchColor = benchColorMap[p.playerId];
                       return (
                         <div
                           key={p.playerId}
                           className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing ${
-                            isPlayerHeld ? "bg-amber-50 border-amber-300" : "bg-white"
+                            isPlayerHeld
+                              ? "bg-amber-50 border-amber-300"
+                              : benchColor
+                                ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
+                                : "bg-white"
                           }`}
                           draggable={!isLocked}
                           onDragStart={() => handleDragStart("BENCH", inning)}
