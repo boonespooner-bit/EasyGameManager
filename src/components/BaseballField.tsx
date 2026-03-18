@@ -33,7 +33,7 @@ interface Props {
   onUpdate?: (assignments: Assignment[]) => void;
   onBattingOrderUpdate?: (order: { playerId: string; playerName: string; order: number }[]) => void;
   pitchingMode?: boolean;
-  allPlayers?: { id: string; name: string }[];
+  allPlayers?: { id: string; name: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPositionChange?: (inning: number, position: string, playerId: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
@@ -670,7 +670,7 @@ function PitcherBox({
   disabled,
 }: {
   players: ({ inning: number; playerId: string; name: string } | null)[];
-  allPlayers: { id: string; name: string }[];
+  allPlayers: { id: string; name: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPitcherUnassign?: (inning: number) => void;
   disabled: boolean;
@@ -679,11 +679,17 @@ function PitcherBox({
   const [search, setSearch] = useState("");
   const [dragOverInning, setDragOverInning] = useState<number | null>(null);
 
+  // Filter out players with DNP (rating 0) for pitching
+  const eligiblePitchers = allPlayers.filter((p) => {
+    const rating = p.ratings?.find((r) => r.position === "P")?.rating;
+    return rating === undefined || rating !== 0;
+  });
+
   const filtered = search.trim()
-    ? allPlayers.filter((p) =>
+    ? eligiblePitchers.filter((p) =>
         p.name.toLowerCase().includes(search.toLowerCase()),
       )
-    : allPlayers;
+    : eligiblePitchers;
 
   const selectPlayer = (inning: number, playerId: string) => {
     onPitcherChange?.(inning, playerId);
@@ -806,7 +812,7 @@ function PositionBox({
   onDragStart: (pos: string, inning: number) => void;
   onDrop: (pos: string, inning: number) => void;
   isDragging: boolean;
-  allPlayers?: { id: string; name: string }[];
+  allPlayers?: { id: string; name: string; ratings?: { position: string; rating: number }[] }[];
   onPositionChange?: (inning: number, position: string, playerId: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
   disabled?: boolean;
@@ -815,11 +821,17 @@ function PositionBox({
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
+  // Filter out players with DNP (rating 0) for this position
+  const eligiblePlayers = (allPlayers || []).filter((p) => {
+    const rating = p.ratings?.find((r) => r.position === position)?.rating;
+    return rating === undefined || rating !== 0;
+  });
+
   const filtered = search.trim()
-    ? (allPlayers || []).filter((p) =>
+    ? eligiblePlayers.filter((p) =>
         p.name.toLowerCase().includes(search.toLowerCase()),
       )
-    : (allPlayers || []);
+    : eligiblePlayers;
 
   const selectPlayer = (inning: number, playerId: string) => {
     onPositionChange?.(inning, position, playerId);

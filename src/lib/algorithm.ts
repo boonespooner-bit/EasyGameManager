@@ -188,10 +188,24 @@ export function generateGamePlan(
     const filledPositions = new Set(locked.values());
     const importance = inningImportance(inning);
 
-    // Fill remaining positions with best available players
-    for (const position of POSITION_PRIORITY) {
-      if (filledPositions.has(position)) continue; // Already locked
+    // Sort positions by number of eligible (non-DNP) players — most constrained first.
+    // This prevents a greedy assignment from "stealing" the only eligible player
+    // for a more constrained position.
+    const unfilledPositions = POSITION_PRIORITY.filter((p) => !filledPositions.has(p));
+    const sortedPositions = [...unfilledPositions].sort((posA, posB) => {
+      const eligibleA = active.filter((p) =>
+        !assignedPlayers.has(p.id) &&
+        (p.ratings.find((r) => r.position === posA)?.rating ?? 1) !== 0,
+      ).length;
+      const eligibleB = active.filter((p) =>
+        !assignedPlayers.has(p.id) &&
+        (p.ratings.find((r) => r.position === posB)?.rating ?? 1) !== 0,
+      ).length;
+      return eligibleA - eligibleB;
+    });
 
+    // Fill positions with best available players (most constrained positions first)
+    for (const position of sortedPositions) {
       let bestScore = -Infinity;
       let bestPlayer: PlayerWithRatings | null = null;
 
@@ -224,29 +238,6 @@ export function generateGamePlan(
         }
       }
 
-      // Fallback: if DNP filtering left no candidate, pick any unassigned player
-      // but still respect DNP — only override as absolute last resort
-      if (!bestPlayer) {
-        for (const player of active) {
-          if (assignedPlayers.has(player.id)) continue;
-          const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
-          if (rating === 0) continue; // Still respect DNP in fallback
-          const history = historyMap.get(player.id);
-          let score = rating * importance;
-          if (rating <= 2) score -= 8;
-          else if (rating <= 3) score -= 3;
-          const seasonCount = history?.positionCounts[position] ?? 0;
-          const gameCount = gamePositionCounts[player.id][position] ?? 0;
-          score -= seasonCount * 0.3;
-          score -= gameCount * 3;
-          if (importance < 1 && rating < 5) score += 1;
-          if (score > bestScore) {
-            bestScore = score;
-            bestPlayer = player;
-          }
-        }
-      }
-
       if (bestPlayer) {
         assignments.push({
           playerId: bestPlayer.id,
@@ -257,6 +248,38 @@ export function generateGamePlan(
         assignedPlayers.add(bestPlayer.id);
         filledPositions.add(position);
         gamePositionCounts[bestPlayer.id][position] = (gamePositionCounts[bestPlayer.id][position] || 0) + 1;
+      }
+    }
+
+    // Post-assignment: resolve any DNP violations via swaps.
+    // If any player ended up at a DNP position (via last-resort), try swapping
+    // them with a player at another position who CAN play both positions.
+    const inningAssignments = assignments.filter((a) => a.inning === inning && a.position !== "BENCH");
+    for (const assignment of inningAssignments) {
+      const rating = players.find((p) => p.id === assignment.playerId)
+        ?.ratings.find((r) => r.position === assignment.position)?.rating ?? 1;
+      if (rating !== 0) continue; // No DNP violation
+
+      // This player has DNP for their assigned position — try to swap
+      for (const other of inningAssignments) {
+        if (other.playerId === assignment.playerId) continue;
+        const otherPlayer = players.find((p) => p.id === other.playerId);
+        const thisPlayer = players.find((p) => p.id === assignment.playerId);
+        if (!otherPlayer || !thisPlayer) continue;
+
+        // Check: can otherPlayer play assignment.position (non-DNP)?
+        const otherRatingForThisPos = otherPlayer.ratings.find((r) => r.position === assignment.position)?.rating ?? 1;
+        if (otherRatingForThisPos === 0) continue;
+
+        // Check: can thisPlayer play other.position (non-DNP)?
+        const thisRatingForOtherPos = thisPlayer.ratings.find((r) => r.position === other.position)?.rating ?? 1;
+        if (thisRatingForOtherPos === 0) continue;
+
+        // Swap positions
+        const tempPos = assignment.position;
+        assignment.position = other.position;
+        other.position = tempPos;
+        break;
       }
     }
 

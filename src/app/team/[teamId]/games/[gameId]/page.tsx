@@ -402,7 +402,7 @@ export default function GamePlanPage() {
         onUpdate={handleUpdate}
         onBattingOrderUpdate={handleBattingOrderUpdate}
         pitchingMode={pitchingMode}
-        allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name }))}
+        allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name, ratings: p.ratings }))}
         onPitcherChange={handlePitcherChange}
         onPositionChange={handlePositionChange}
         onPositionUnassign={handlePositionUnassign}
