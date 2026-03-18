@@ -102,7 +102,7 @@ export async function POST(
     data: {
       teamId,
       opponent,
-      date: new Date(date),
+      date: new Date(date.includes("T") ? date : date + "T12:00:00"),
       innings: {
         create: assignments.map((a) => ({
           playerId: a.playerId,
