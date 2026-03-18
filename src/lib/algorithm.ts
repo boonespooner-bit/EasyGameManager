@@ -648,10 +648,11 @@ function assignBenchScheduleFlexible(
         });
 
       if (eligible.length === 0) {
-        // Relax the no-consecutive constraint
+        // Relax the no-consecutive-inning constraint, but still enforce cross-game rule
         const fallback = allBenchPlayers
           .filter((p) => playerBenchCount[p.id] < p.target)
           .filter((p) => !slots.includes(p.id))
+          .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
           .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
           .filter((p) => !lockedInThisInning.has(p.id))
           .sort((a, b) => {
@@ -669,6 +670,7 @@ function assignBenchScheduleFlexible(
         // All players at target — allow over-target to fill the required bench count
         const overTarget = allBenchPlayers
           .filter((p) => !slots.includes(p.id))
+          .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
           .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
           .filter((p) => !lockedInThisInning.has(p.id))
           .sort((a, b) => playerBenchCount[a.id] - playerBenchCount[b.id]);
