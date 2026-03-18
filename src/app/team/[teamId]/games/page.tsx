@@ -98,6 +98,7 @@ export default function GamesPage() {
                     year: "numeric",
                     month: "short",
                     day: "numeric",
+                    timeZone: "UTC",
                   })}
                 </p>
               </div>

@@ -99,7 +99,10 @@ export async function PUT(
   const data: Record<string, unknown> = {};
   if (body.isLocked !== undefined) data.isLocked = body.isLocked;
   if (body.opponent !== undefined) data.opponent = body.opponent;
-  if (body.date !== undefined) data.date = new Date(body.date);
+  if (body.date !== undefined) {
+    const d = body.date;
+    data.date = new Date(d.includes("T") ? d : d + "T12:00:00");
+  }
 
   const game = await prisma.game.update({
     where: { id: gameId },

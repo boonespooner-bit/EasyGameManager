@@ -216,7 +216,7 @@ export default function BaseballField({
             {teamName} vs. {opponent}
           </h1>
           <p style={{ fontSize: "11px", color: "#555", margin: "2px 0" }}>
-            {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
           </p>
         </div>
 
@@ -396,7 +396,7 @@ export default function BaseballField({
                 }
               }}
             >
-              {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
             </p>
           </>
         )}
