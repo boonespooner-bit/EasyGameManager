@@ -302,6 +302,14 @@ export default function RosterPage() {
 }
 
 function RatingBadge({ rating }: { rating: number }) {
+  if (rating === 0) {
+    return (
+      <span className="inline-block w-8 h-6 leading-6 rounded text-[10px] font-bold bg-gray-800 text-gray-200">
+        DNP
+      </span>
+    );
+  }
+
   let bg = "bg-gray-100 text-gray-400";
   if (rating >= 7) bg = "bg-green-100 text-green-700";
   else if (rating >= 4) bg = "bg-yellow-100 text-yellow-700";
@@ -396,16 +404,16 @@ function PlayerForm({
                 }
                 className="w-full border border-gray-300 rounded px-1 py-1.5 text-sm text-center focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white"
               >
-                {[9, 8, 7, 6, 5, 4, 3, 2, 1].map((val) => (
+                {[9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map((val) => (
                   <option key={val} value={val}>
-                    {val}{val === 9 ? " \u2605" : val === 1 ? " \u25BD" : ""}
+                    {val === 0 ? "DNP" : val}{val === 9 ? " \u2605" : val === 1 ? " \u25BD" : ""}
                   </option>
                 ))}
               </select>
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">9 \u2605 = Best &nbsp; 1 \u25BD = Worst</p>
+        <p className="text-xs text-gray-400 mt-1">9 \u2605 = Best &nbsp; 1 \u25BD = Worst &nbsp; DNP = Do Not Play</p>
       </div>
 
       <div className="flex gap-2">

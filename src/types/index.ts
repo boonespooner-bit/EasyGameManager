@@ -32,4 +32,5 @@ export interface SeasonHistory {
   positionCounts: Record<string, number>;
   totalBenchInnings: number;
   hasPitched: boolean;
+  startedOnBenchLastGame: boolean;
 }
