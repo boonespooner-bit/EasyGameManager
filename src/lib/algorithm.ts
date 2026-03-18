@@ -224,6 +224,27 @@ export function generateGamePlan(
         }
       }
 
+      // Fallback: if DNP filtering left no candidate, pick any unassigned player
+      if (!bestPlayer) {
+        for (const player of active) {
+          if (assignedPlayers.has(player.id)) continue;
+          const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+          const history = historyMap.get(player.id);
+          let score = rating * importance;
+          if (rating <= 2) score -= 8;
+          else if (rating <= 3) score -= 3;
+          const seasonCount = history?.positionCounts[position] ?? 0;
+          const gameCount = gamePositionCounts[player.id][position] ?? 0;
+          score -= seasonCount * 0.3;
+          score -= gameCount * 3;
+          if (importance < 1 && rating < 5) score += 1;
+          if (score > bestScore) {
+            bestScore = score;
+            bestPlayer = player;
+          }
+        }
+      }
+
       if (bestPlayer) {
         assignments.push({
           playerId: bestPlayer.id,
@@ -233,6 +254,25 @@ export function generateGamePlan(
         });
         assignedPlayers.add(bestPlayer.id);
         gamePositionCounts[bestPlayer.id][position] = (gamePositionCounts[bestPlayer.id][position] || 0) + 1;
+      }
+    }
+
+    // Safety: assign any remaining unassigned active players to unfilled positions
+    const allPositions: (Position | "BENCH")[] = ["P", "C", ...POSITION_PRIORITY];
+    for (const player of active) {
+      if (assignedPlayers.has(player.id)) continue;
+      for (const position of allPositions) {
+        if (filledPositions.has(position)) continue;
+        assignments.push({
+          playerId: player.id,
+          playerName: player.name,
+          inning,
+          position: position as Position,
+        });
+        assignedPlayers.add(player.id);
+        filledPositions.add(position);
+        gamePositionCounts[player.id][position] = (gamePositionCounts[player.id][position] || 0) + 1;
+        break;
       }
     }
   }
@@ -309,7 +349,20 @@ function planPitchingSchedule(
       }
     }
 
-    // If no pitcher available at all, skip this inning
+    // Fallback: if all pitchers are DNP, pick any active player not yet used as pitcher
+    if (!assigned) {
+      const active = activeByInning.get(inning) || [];
+      for (const player of active) {
+        if (usedPitchers.has(player.id)) continue;
+        schedule.push({ playerId: player.id, inning });
+        usedPitchers.add(player.id);
+        i += 1;
+        assigned = true;
+        break;
+      }
+    }
+
+    // If truly no one available, advance
     if (!assigned) {
       i += 1;
     }
@@ -406,6 +459,21 @@ function planCatchingSchedule(
       }
     }
 
+    // Fallback: if all catchers are DNP, pick any active non-pitcher player
+    if (!assigned) {
+      const active = activeByInning.get(inning) || [];
+      for (const player of active) {
+        if (usedCatchers.has(player.id)) continue;
+        if (pitcherByInning.get(inning) === player.id) continue;
+        schedule.push({ playerId: player.id, inning });
+        usedCatchers.add(player.id);
+        i += 1;
+        assigned = true;
+        break;
+      }
+    }
+
+    // If truly no one available, advance
     if (!assigned) {
       i += 1;
     }
