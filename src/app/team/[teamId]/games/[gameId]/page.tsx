@@ -40,7 +40,7 @@ interface GameData {
   exclusions?: { playerId: string }[];
   poolPlayers?: { id: string; name: string }[];
   gameBattingOrder?: { playerId: string; order: number }[];
-  gameBall?: { playerId: string; reason: string } | null;
+  gameBalls?: { id: string; playerId: string; reason: string }[];
 }
 
 export default function GamePlanPage() {
@@ -292,17 +292,17 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
-  const handleGameBallUpdate = async (playerId: string, reason: string) => {
+  const handleGameBallUpdate = async (playerId: string, reason: string, id?: string) => {
     await fetch(`/api/teams/${teamId}/games/${gameId}/game-ball`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ playerId, reason }),
+      body: JSON.stringify({ playerId, reason, id }),
     });
     await fetchGame();
   };
 
-  const handleGameBallRemove = async () => {
-    await fetch(`/api/teams/${teamId}/games/${gameId}/game-ball`, {
+  const handleGameBallRemove = async (id: string) => {
+    await fetch(`/api/teams/${teamId}/games/${gameId}/game-ball?id=${id}`, {
       method: "DELETE",
     });
     await fetchGame();
@@ -410,11 +410,12 @@ export default function GamePlanPage() {
         regenerating={regenerating}
         heldPositions={heldPositions}
         onGameInfoUpdate={handleGameInfoUpdate}
-        gameBall={game.gameBall ? {
-          playerId: game.gameBall.playerId,
-          playerName: game.team.players.find((p) => p.id === game.gameBall!.playerId)?.name || "Unknown",
-          reason: game.gameBall.reason,
-        } : null}
+        gameBalls={(game.gameBalls || []).map((gb) => ({
+          id: gb.id,
+          playerId: gb.playerId,
+          playerName: game.team.players.find((p) => p.id === gb.playerId)?.name || "Unknown",
+          reason: gb.reason,
+        }))}
         onGameBallUpdate={handleGameBallUpdate}
         onGameBallRemove={handleGameBallRemove}
       />

@@ -63,12 +63,12 @@ export async function GET(
     // Table may not exist yet
   }
 
-  // Query game ball (table may not exist in unmigrated DBs)
-  let gameBall: { playerId: string; reason: string } | null = null;
+  // Query game balls (table may not exist in unmigrated DBs)
+  let gameBalls: { id: string; playerId: string; reason: string }[] = [];
   try {
-    gameBall = await prisma.gameBall.findUnique({
+    gameBalls = await prisma.gameBall.findMany({
       where: { gameId },
-      select: { playerId: true, reason: true },
+      select: { id: true, playerId: true, reason: true },
     });
   } catch {
     // Table may not exist yet
@@ -86,7 +86,7 @@ export async function GET(
     exclusions,
     poolPlayers,
     gameBattingOrder,
-    gameBall,
+    gameBalls,
   });
 }
 
