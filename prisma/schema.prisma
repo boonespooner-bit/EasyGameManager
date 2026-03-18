@@ -91,6 +91,7 @@ model Player {
   assignments  InningAssignment[]
   poolGame     Game?              @relation("PoolPlayers", fields: [poolGameId], references: [id], onDelete: Cascade)
   exclusions   GameExclusion[]
+  gameBalls    GameBall[]
 }
 
 model PlayerRating {
@@ -116,6 +117,7 @@ model Game {
   poolPlayers   Player[]           @relation("PoolPlayers")
   exclusions    GameExclusion[]
   battingOrders GameBattingOrder[]
+  gameBall      GameBall?
 }
 
 model GameExclusion {
@@ -148,4 +150,13 @@ model InningAssignment {
   player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@unique([gameId, playerId, inning])
+}
+
+model GameBall {
+  id       String @id @default(cuid())
+  gameId   String @unique
+  playerId String
+  reason   String
+  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
 }

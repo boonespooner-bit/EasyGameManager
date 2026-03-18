@@ -40,6 +40,7 @@ interface GameData {
   exclusions?: { playerId: string }[];
   poolPlayers?: { id: string; name: string }[];
   gameBattingOrder?: { playerId: string; order: number }[];
+  gameBall?: { playerId: string; reason: string } | null;
 }
 
 export default function GamePlanPage() {
@@ -291,6 +292,22 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
+  const handleGameBallUpdate = async (playerId: string, reason: string) => {
+    await fetch(`/api/teams/${teamId}/games/${gameId}/game-ball`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId, reason }),
+    });
+    await fetchGame();
+  };
+
+  const handleGameBallRemove = async () => {
+    await fetch(`/api/teams/${teamId}/games/${gameId}/game-ball`, {
+      method: "DELETE",
+    });
+    await fetchGame();
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
@@ -393,6 +410,13 @@ export default function GamePlanPage() {
         regenerating={regenerating}
         heldPositions={heldPositions}
         onGameInfoUpdate={handleGameInfoUpdate}
+        gameBall={game.gameBall ? {
+          playerId: game.gameBall.playerId,
+          playerName: game.team.players.find((p) => p.id === game.gameBall!.playerId)?.name || "Unknown",
+          reason: game.gameBall.reason,
+        } : null}
+        onGameBallUpdate={handleGameBallUpdate}
+        onGameBallRemove={handleGameBallRemove}
       />
     </div>
   );
