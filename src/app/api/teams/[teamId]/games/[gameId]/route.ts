@@ -63,6 +63,17 @@ export async function GET(
     // Table may not exist yet
   }
 
+  // Query game ball (table may not exist in unmigrated DBs)
+  let gameBall: { playerId: string; reason: string } | null = null;
+  try {
+    gameBall = await prisma.gameBall.findUnique({
+      where: { gameId },
+      select: { playerId: true, reason: true },
+    });
+  } catch {
+    // Table may not exist yet
+  }
+
   // Filter players: roster players + pool players for this game
   const poolPlayerIds = new Set(poolPlayers.map((p) => p.id));
   const filteredPlayers = game.team.players.filter(
@@ -75,6 +86,7 @@ export async function GET(
     exclusions,
     poolPlayers,
     gameBattingOrder,
+    gameBall,
   });
 }
 
