@@ -78,11 +78,19 @@ export function generateGamePlan(
     }
   }
 
+  // Players who started on bench last game cannot start on bench this game
+  const previousGameBenchStarters = new Set<string>();
+  for (const [, history] of historyMap) {
+    if (history.startedOnBenchLastGame) {
+      previousGameBenchStarters.add(history.playerId);
+    }
+  }
+
   if (numPlayers > numPositions) {
     const benchPerInning = numPlayers - numPositions;
     benchSchedule = assignBenchScheduleFlexible(
       players, historyMap, benchPerInning, lockedPitcherInnings,
-      lockedPlayerInnings, lockedBenchByInning,
+      lockedPlayerInnings, lockedBenchByInning, previousGameBenchStarters,
     );
   }
 
@@ -191,6 +199,8 @@ export function generateGamePlan(
         if (assignedPlayers.has(player.id)) continue;
 
         const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+        // DNP: rating 0 means player should never play this position
+        if (rating === 0) continue;
         const history = historyMap.get(player.id);
 
         let score = rating * importance;
@@ -246,15 +256,17 @@ function planPitchingSchedule(
   const innings = [...INNINGS]; // [1,2,3,4,5,6]
   const usedPitchers = new Set<string>();
 
-  // Score each player for pitching
-  const pitchScores = players.map((p) => {
-    const rating = p.ratings.find((r) => r.position === "P")?.rating ?? 1;
-    const history = historyMap.get(p.id);
-    let score = rating;
-    // Bonus for players who haven't pitched this season
-    if (history && !history.hasPitched) score += 2;
-    return { player: p, score };
-  }).sort((a, b) => b.score - a.score);
+  // Score each player for pitching (exclude DNP players with rating 0)
+  const pitchScores = players
+    .filter((p) => (p.ratings.find((r) => r.position === "P")?.rating ?? 1) !== 0)
+    .map((p) => {
+      const rating = p.ratings.find((r) => r.position === "P")?.rating ?? 1;
+      const history = historyMap.get(p.id);
+      let score = rating;
+      // Bonus for players who haven't pitched this season
+      if (history && !history.hasPitched) score += 2;
+      return { player: p, score };
+    }).sort((a, b) => b.score - a.score);
 
   // Greedily fill innings in consecutive blocks of 2, then 1
   let i = 0;
@@ -334,13 +346,15 @@ function planCatchingSchedule(
     usedCatchers.add(lc.playerId);
   }
 
-  // Score each player for catching
-  const catchScores = players.map((p) => {
-    const rating = p.ratings.find((r) => r.position === "C")?.rating ?? 1;
-    const history = historyMap.get(p.id);
-    const seasonCount = history?.positionCounts["C"] ?? 0;
-    return { player: p, score: rating - seasonCount * 0.3 };
-  }).sort((a, b) => b.score - a.score);
+  // Score each player for catching (exclude DNP players with rating 0)
+  const catchScores = players
+    .filter((p) => (p.ratings.find((r) => r.position === "C")?.rating ?? 1) !== 0)
+    .map((p) => {
+      const rating = p.ratings.find((r) => r.position === "C")?.rating ?? 1;
+      const history = historyMap.get(p.id);
+      const seasonCount = history?.positionCounts["C"] ?? 0;
+      return { player: p, score: rating - seasonCount * 0.3 };
+    }).sort((a, b) => b.score - a.score);
 
   let i = 0;
   while (i < innings.length) {
@@ -407,6 +421,7 @@ function assignBenchScheduleFlexible(
   lockedPitcherInnings: Map<number, string> = new Map(),
   lockedPlayerInnings: Map<number, Set<string>> = new Map(),
   lockedBenchByInning: Map<number, string[]> = new Map(),
+  previousGameBenchStarters: Set<string> = new Set(),
 ): Map<number, string[]> {
   const totalBenchSlots = benchPerInning * INNINGS.length;
 
@@ -502,6 +517,9 @@ function assignBenchScheduleFlexible(
         .filter((p) => !slots.includes(p.id))
         // No consecutive bench innings: skip players benched in the previous inning
         .filter((p) => !prevBenched.includes(p.id))
+        // Consecutive game bench start rule: if player started on bench last game,
+        // they must start in the field this game (cannot be benched in inning 1)
+        .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
         // Never bench a locked pitcher in their pitching inning
         .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
         // Never bench a player locked into a field position in this inning
@@ -623,7 +641,13 @@ export function buildSeasonHistory(
 ): SeasonHistory[] {
   const historyMap = new Map<string, SeasonHistory>();
 
-  for (const gameAssignments of pastGames) {
+  // Track who was benched in inning 1 of the most recent game
+  const lastGameBenchStarters = new Set<string>();
+
+  for (let gi = 0; gi < pastGames.length; gi++) {
+    const gameAssignments = pastGames[gi];
+    const isLastGame = gi === pastGames.length - 1;
+
     for (const a of gameAssignments) {
       if (!historyMap.has(a.playerId)) {
         historyMap.set(a.playerId, {
@@ -631,16 +655,26 @@ export function buildSeasonHistory(
           positionCounts: {},
           totalBenchInnings: 0,
           hasPitched: false,
+          startedOnBenchLastGame: false,
         });
       }
       const h = historyMap.get(a.playerId)!;
       if (a.position === "BENCH") {
         h.totalBenchInnings++;
+        if (isLastGame && a.inning === 1) {
+          lastGameBenchStarters.add(a.playerId);
+        }
       } else {
         h.positionCounts[a.position] = (h.positionCounts[a.position] || 0) + 1;
         if (a.position === "P") h.hasPitched = true;
       }
     }
+  }
+
+  // Set the flag for players who started on bench in the last game
+  for (const playerId of lastGameBenchStarters) {
+    const h = historyMap.get(playerId);
+    if (h) h.startedOnBenchLastGame = true;
   }
 
   return Array.from(historyMap.values());
