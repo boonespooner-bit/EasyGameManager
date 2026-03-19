@@ -563,25 +563,17 @@ function assignBenchScheduleFlexible(
 
   // Assign bench targets based on rating:
   // - Lowest-rated players sit 2x (max), highest-rated sit 1x (min, if slots require it)
-  // - sorted is already ordered low→high by rating
-  // - No player sits more than 2 innings per game
   const maxBench = 2;
   let remaining = totalBenchSlots;
   const targetMap = new Map<string, number>();
-
-  // Figure out minimum everyone must sit:
-  // If totalBenchSlots >= numPlayers, everyone must sit at least 1
   const numPlayers = players.length;
   const guaranteedMin = totalBenchSlots >= numPlayers ? 1 : 0;
 
-  // Initialize: if everyone must sit, give each player 1 first
   for (const p of sorted) {
     const base = Math.min(guaranteedMin, remaining);
     targetMap.set(p.id, base);
     remaining -= base;
   }
-
-  // Distribute remaining slots to lowest-rated players first, up to maxBench
   for (const p of sorted) {
     if (remaining <= 0) break;
     const current = targetMap.get(p.id)!;
@@ -607,6 +599,18 @@ function assignBenchScheduleFlexible(
     playerBenchCount[p.id] = 0;
   });
 
+  // Helper: check if a player can be benched in a given inning
+  const canBenchIn = (playerId: string, inning: number): boolean => {
+    const slots = benchSlots.get(inning)!;
+    if (slots.length >= benchPerInning) return false;
+    if (slots.includes(playerId)) return false;
+    if (inning === 1 && previousGameBenchStarters.has(playerId)) return false;
+    if (lockedPitcherInnings.get(inning) === playerId) return false;
+    const lockedIn = lockedPlayerInnings.get(inning) || new Set<string>();
+    if (lockedIn.has(playerId)) return false;
+    return true;
+  };
+
   // Pre-fill locked bench assignments
   for (const inning of INNINGS) {
     const lockedBench = lockedBenchByInning.get(inning) || [];
@@ -619,8 +623,111 @@ function assignBenchScheduleFlexible(
     }
   }
 
-  // Assign bench in sequential inning order so we can enforce the
-  // "no consecutive bench innings" rule
+  // Separate into 2-inning and 1-inning groups
+  const twoInningPlayers = allBenchPlayers.filter((p) => p.target === 2 && playerBenchCount[p.id] < 2);
+  const oneInningPlayers = allBenchPlayers.filter((p) => p.target === 1 && playerBenchCount[p.id] < 1);
+
+  // --- Phase 1: Place 2-inning players in non-consecutive inning pairs ---
+  // Spread them across the game by picking pairs that balance inning load.
+  for (const player of twoInningPlayers) {
+    const alreadyPlaced = playerBenchCount[player.id];
+    if (alreadyPlaced >= 2) continue;
+
+    // If partially placed (1 locked), just find the second inning
+    if (alreadyPlaced === 1) {
+      const placedInning = INNINGS.find((inn) => benchSlots.get(inn)!.includes(player.id));
+      let bestInning = -1;
+      let bestLoad = Infinity;
+      for (const inning of INNINGS) {
+        if (!canBenchIn(player.id, inning)) continue;
+        // No consecutive bench
+        if (placedInning !== undefined && Math.abs(inning - placedInning) === 1) continue;
+        const load = benchSlots.get(inning)!.length;
+        if (load < bestLoad) {
+          bestLoad = load;
+          bestInning = inning;
+        }
+      }
+      if (bestInning > 0) {
+        benchSlots.get(bestInning)!.push(player.id);
+        playerBenchCount[player.id]++;
+      }
+      continue;
+    }
+
+    // Find the best pair of non-consecutive innings
+    let bestPair: [number, number] | null = null;
+    let bestScore = Infinity;
+
+    for (let i = 0; i < INNINGS.length; i++) {
+      for (let j = i + 1; j < INNINGS.length; j++) {
+        const inn1 = INNINGS[i];
+        const inn2 = INNINGS[j];
+        // No consecutive bench innings
+        if (inn2 - inn1 === 1) continue;
+        if (!canBenchIn(player.id, inn1)) continue;
+        if (!canBenchIn(player.id, inn2)) continue;
+
+        // Score: prefer pairs where total load is lowest (distributes evenly)
+        // Secondary: prefer wider spread (larger gap between innings)
+        const load = benchSlots.get(inn1)!.length + benchSlots.get(inn2)!.length;
+        const spread = inn2 - inn1;
+        const score = load * 100 - spread; // lower is better
+        if (score < bestScore) {
+          bestScore = score;
+          bestPair = [inn1, inn2];
+        }
+      }
+    }
+
+    if (bestPair) {
+      benchSlots.get(bestPair[0])!.push(player.id);
+      benchSlots.get(bestPair[1])!.push(player.id);
+      playerBenchCount[player.id] = 2;
+    }
+  }
+
+  // --- Phase 2: Place 1-inning players in remaining slots ---
+  // Distribute evenly, preferring innings that already have 2-inning players (mixing).
+  // Also avoid placing multiple 1-inning players in the same inning when possible.
+  const twoInningIds = new Set(twoInningPlayers.map((p) => p.id));
+
+  for (const player of oneInningPlayers) {
+    if (playerBenchCount[player.id] >= 1) continue;
+
+    let bestInning = -1;
+    let bestScore = -Infinity;
+
+    for (const inning of INNINGS) {
+      if (!canBenchIn(player.id, inning)) continue;
+
+      const slots = benchSlots.get(inning)!;
+
+      // Count how many 2-inning vs 1-inning players are in this inning
+      const twoCount = slots.filter((id) => twoInningIds.has(id)).length;
+      const oneCount = slots.filter((id) => !twoInningIds.has(id)).length;
+      const slotsRemaining = benchPerInning - slots.length;
+
+      // Scoring (higher = better):
+      // +20 per 2-inning player already here (prefer mixing with 2-inning players)
+      // -15 per 1-inning player already here (avoid clustering 1-inning players)
+      // +5 per remaining slot (prefer less-full innings)
+      let score = twoCount * 20 - oneCount * 15 + slotsRemaining * 5;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestInning = inning;
+      }
+    }
+
+    if (bestInning > 0) {
+      benchSlots.get(bestInning)!.push(player.id);
+      playerBenchCount[player.id] = 1;
+    }
+  }
+
+  // --- Phase 3: Fill any remaining empty slots ---
+  // Some slots might still be unfilled if constraints prevented placement above.
   for (const inning of INNINGS) {
     const slots = benchSlots.get(inning)!;
     const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
@@ -628,68 +735,63 @@ function assignBenchScheduleFlexible(
     while (slots.length < benchPerInning) {
       const prevBenched = inning > 1 ? (benchSlots.get(inning - 1) || []) : [];
 
+      // Try with no-consecutive constraint
       const eligible = allBenchPlayers
         .filter((p) => playerBenchCount[p.id] < p.target)
         .filter((p) => !slots.includes(p.id))
-        // No consecutive bench innings: skip players benched in the previous inning
         .filter((p) => !prevBenched.includes(p.id))
-        // Consecutive game bench start rule: if player started on bench last game,
-        // they must start in the field this game (cannot be benched in inning 1)
         .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
-        // Never bench a locked pitcher in their pitching inning
         .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
-        // Never bench a player locked into a field position in this inning
         .filter((p) => !lockedInThisInning.has(p.id))
         .sort((a, b) => {
-          // Prefer benching lower-rated players first
           const aRating = playerAvgRating.get(a.id) || 5;
           const bRating = playerAvgRating.get(b.id) || 5;
           return aRating - bRating;
         });
 
-      if (eligible.length === 0) {
-        // Relax the no-consecutive-inning constraint, but still enforce cross-game rule
-        const fallback = allBenchPlayers
-          .filter((p) => playerBenchCount[p.id] < p.target)
-          .filter((p) => !slots.includes(p.id))
-          .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
-          .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
-          .filter((p) => !lockedInThisInning.has(p.id))
-          .sort((a, b) => {
-            const aRating = playerAvgRating.get(a.id) || 5;
-            const bRating = playerAvgRating.get(b.id) || 5;
-            return aRating - bRating;
-          });
-        if (fallback.length > 0) {
-          const chosen = fallback[0];
-          slots.push(chosen.id);
-          playerBenchCount[chosen.id]++;
-          continue;
-        }
-
-        // All players at target — allow over-target to fill the required bench count
-        const overTarget = allBenchPlayers
-          .filter((p) => !slots.includes(p.id))
-          .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
-          .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
-          .filter((p) => !lockedInThisInning.has(p.id))
-          .sort((a, b) => playerBenchCount[a.id] - playerBenchCount[b.id]);
-        if (overTarget.length === 0) break; // truly no one available
-        const chosen = overTarget[0];
+      if (eligible.length > 0) {
+        const chosen = eligible[0];
         slots.push(chosen.id);
         playerBenchCount[chosen.id]++;
         continue;
       }
 
-      const chosen = eligible[0];
+      // Relax no-consecutive, keep cross-game rule
+      const fallback = allBenchPlayers
+        .filter((p) => playerBenchCount[p.id] < p.target)
+        .filter((p) => !slots.includes(p.id))
+        .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
+        .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
+        .filter((p) => !lockedInThisInning.has(p.id))
+        .sort((a, b) => {
+          const aRating = playerAvgRating.get(a.id) || 5;
+          const bRating = playerAvgRating.get(b.id) || 5;
+          return aRating - bRating;
+        });
+
+      if (fallback.length > 0) {
+        const chosen = fallback[0];
+        slots.push(chosen.id);
+        playerBenchCount[chosen.id]++;
+        continue;
+      }
+
+      // Over-target to fill
+      const overTarget = allBenchPlayers
+        .filter((p) => !slots.includes(p.id))
+        .filter((p) => !(inning === 1 && previousGameBenchStarters.has(p.id)))
+        .filter((p) => lockedPitcherInnings.get(inning) !== p.id)
+        .filter((p) => !lockedInThisInning.has(p.id))
+        .sort((a, b) => playerBenchCount[a.id] - playerBenchCount[b.id]);
+
+      if (overTarget.length === 0) break;
+      const chosen = overTarget[0];
       slots.push(chosen.id);
       playerBenchCount[chosen.id]++;
     }
   }
 
   // Post-processing: ensure every player with target >= 1 actually sits at least once.
-  // If a player was never benched (due to locked positions blocking them in every chosen inning),
-  // swap them into a bench slot by replacing a player who has benched more than their minimum.
   const unbenchedPlayers = allBenchPlayers.filter(
     (p) => p.target >= 1 && playerBenchCount[p.id] === 0,
   );
@@ -697,7 +799,6 @@ function assignBenchScheduleFlexible(
   for (const unbenched of unbenchedPlayers) {
     let swapped = false;
 
-    // Find an inning where this player is NOT locked into a field position
     for (const inning of INNINGS) {
       if (swapped) break;
       const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
@@ -707,15 +808,12 @@ function assignBenchScheduleFlexible(
       const slots = benchSlots.get(inning)!;
       if (slots.includes(unbenched.id)) continue;
 
-      // Find someone in this inning's bench who has benched > 1 times and can be swapped out
       for (let si = 0; si < slots.length; si++) {
         const swapCandidate = slots[si];
         if (playerBenchCount[swapCandidate] <= 1) continue;
-        // Don't swap out a locked bench player
         const lockedBench = lockedBenchByInning.get(inning) || [];
         if (lockedBench.includes(swapCandidate)) continue;
 
-        // Perform swap
         slots[si] = unbenched.id;
         playerBenchCount[unbenched.id]++;
         playerBenchCount[swapCandidate]--;
@@ -724,8 +822,6 @@ function assignBenchScheduleFlexible(
       }
     }
 
-    // If no swap was possible (everyone only benched once), add to a slot
-    // by replacing someone in an inning where neither player is locked
     if (!swapped) {
       for (const inning of INNINGS) {
         if (swapped) break;
