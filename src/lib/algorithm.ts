@@ -1,6 +1,8 @@
 import { POSITIONS, INNINGS, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position } from "@/types";
 
 const POSITION_PRIORITY: Position[] = ["SS", "3B", "2B", "1B", "CF", "LF", "RF"];
+const INFIELD_POSITIONS: Position[] = ["3B", "SS", "2B", "1B"];
+const OUTFIELD_POSITIONS: Position[] = ["LF", "CF", "RF"];
 
 // Innings 1-2 and 5-6 face the best hitters; innings 3-4 face the weakest
 function inningImportance(inning: number): number {
@@ -232,6 +234,14 @@ export function generateGamePlan(
           score += 1;
         }
 
+        // Boost for players who haven't played infield yet this game
+        if (INFIELD_POSITIONS.includes(position)) {
+          const hasInfield = INFIELD_POSITIONS.some(
+            (pos) => (gamePositionCounts[player.id][pos] ?? 0) > 0,
+          );
+          if (!hasInfield) score += 2;
+        }
+
         if (score > bestScore) {
           bestScore = score;
           bestPlayer = player;
@@ -320,6 +330,81 @@ export function generateGamePlan(
         assignedPlayers.add(player.id);
         filledPositions.add(position);
         gamePositionCounts[player.id][position] = (gamePositionCounts[player.id][position] || 0) + 1;
+        break;
+      }
+    }
+  }
+
+  // --- Post-processing: ensure every player plays infield at least once ---
+  // Infield = 3B, SS, 2B, 1B. For players who never got an infield assignment,
+  // swap them with a player at an infield position who already has other infield innings.
+  const playerInfieldCount: Record<string, number> = {};
+  for (const p of players) {
+    playerInfieldCount[p.id] = 0;
+  }
+  for (const a of assignments) {
+    if (INFIELD_POSITIONS.includes(a.position as Position)) {
+      playerInfieldCount[a.playerId] = (playerInfieldCount[a.playerId] || 0) + 1;
+    }
+  }
+
+  const playersNeedingInfield = players.filter((p) => {
+    if (playerInfieldCount[p.id] > 0) return false;
+    // Skip if player has DNP for ALL infield positions
+    const hasAnyInfield = INFIELD_POSITIONS.some((pos) => {
+      const rating = p.ratings.find((r) => r.position === pos)?.rating ?? 1;
+      return rating !== 0;
+    });
+    return hasAnyInfield;
+  });
+
+  for (const player of playersNeedingInfield) {
+    let swapped = false;
+
+    // Find an inning where this player is at an outfield position (or P/C won't work, skip those)
+    for (const inning of INNINGS) {
+      if (swapped) break;
+      const playerAssignment = assignments.find(
+        (a) => a.playerId === player.id && a.inning === inning,
+      );
+      if (!playerAssignment) continue;
+      // Player must be in outfield to swap into infield
+      if (!OUTFIELD_POSITIONS.includes(playerAssignment.position as Position)) continue;
+
+      // Find someone at an infield position in this same inning who:
+      // 1. Has other infield innings (so losing one is OK)
+      // 2. Can play the outfield position (non-DNP)
+      // 3. This player can play their infield position (non-DNP)
+      for (const otherAssignment of assignments) {
+        if (otherAssignment.inning !== inning) continue;
+        if (otherAssignment.playerId === player.id) continue;
+        if (!INFIELD_POSITIONS.includes(otherAssignment.position as Position)) continue;
+
+        const otherPlayer = players.find((p) => p.id === otherAssignment.playerId);
+        if (!otherPlayer) continue;
+
+        // Does other player have infield in other innings? (must have > 1)
+        if ((playerInfieldCount[otherPlayer.id] || 0) <= 1) continue;
+
+        // Can other player play our outfield position?
+        const otherOutfieldRating = otherPlayer.ratings.find(
+          (r) => r.position === playerAssignment.position,
+        )?.rating ?? 1;
+        if (otherOutfieldRating === 0) continue;
+
+        // Can this player play the infield position?
+        const thisInfieldRating = player.ratings.find(
+          (r) => r.position === otherAssignment.position,
+        )?.rating ?? 1;
+        if (thisInfieldRating === 0) continue;
+
+        // Swap
+        const tempPos = playerAssignment.position;
+        playerAssignment.position = otherAssignment.position;
+        otherAssignment.position = tempPos;
+        playerInfieldCount[player.id]++;
+        playerInfieldCount[otherPlayer.id]--;
+        swapped = true;
         break;
       }
     }
