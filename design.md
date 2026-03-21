@@ -133,8 +133,9 @@ Positions are not filled in a fixed order. Instead, for each inning, positions a
 - **Drag-and-drop** — Reorder batting lineup
 - **Position dropdowns** — Change any player's position (filters out DNP options)
 - **Pitching mode** — Toggle to prioritize pitcher selection; changes trigger full regeneration
-- **Hold positions** — Pin specific player-position assignments, then regenerate around them
-- **Lock/unlock** — Finalize a game plan (locked games feed into season history)
+- **Hold positions** — Pin specific player-position assignments, then regenerate around them. Held positions persist to the database so they survive page refreshes and lock/unlock cycles.
+- **Swap dialog** — When a coach selects a player who is already locked at another position in the same inning, a dialog appears showing the conflict and offering to swap positions with confirm/cancel. If the player is on the bench, the swap proposes moving the displaced player to the bench.
+- **Lock/unlock** — Finalize a game plan (locked games feed into season history). When unlocking, all positions and held/locked status are preserved exactly as they were before locking.
 - **Bench color coding** — 2-inning bench players get shared colors across their bench slots for visual clarity
 - **Print view** — Print-friendly layout with bench colors preserved
 - **Game ball awards** — Post-game recognition for players

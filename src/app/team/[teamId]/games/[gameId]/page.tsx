@@ -41,6 +41,7 @@ interface GameData {
   poolPlayers?: { id: string; name: string }[];
   gameBattingOrder?: { playerId: string; order: number }[];
   gameBalls?: { id: string; playerId: string; reason: string }[];
+  heldPositions?: { playerId: string; inning: number; position: string }[];
 }
 
 export default function GamePlanPage() {
@@ -58,8 +59,17 @@ export default function GamePlanPage() {
   const [pitchingMode, setPitchingMode] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [heldPositions, setHeldPositions] = useState<{ playerId: string; inning: number; position: string }[]>([]);
+  const [swapDialog, setSwapDialog] = useState<{
+    inning: number;
+    targetPosition: string;
+    selectedPlayerId: string;
+    selectedPlayerName: string;
+    currentPosition: string;
+    currentPlayerId: string;
+    currentPlayerName: string;
+  } | null>(null);
 
-  const fetchGame = useCallback(async () => {
+  const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
     if (res.ok) {
       const data: GameData = await res.json();
@@ -72,6 +82,11 @@ export default function GamePlanPage() {
           position: i.position as FieldPosition,
         })),
       );
+
+      // Restore held positions from DB on initial load
+      if (restoreHeldPositions && data.heldPositions && data.heldPositions.length > 0) {
+        setHeldPositions(data.heldPositions);
+      }
 
       // Build batting order: use per-game order if available, else team order
       const excludedIds = new Set((data.exclusions || []).map((e) => e.playerId));
@@ -121,13 +136,25 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
+  const saveHeldPositions = useCallback(async (positions: { playerId: string; inning: number; position: string }[]) => {
+    await fetch(`/api/teams/${teamId}/games/${gameId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heldPositions: positions }),
+    });
+  }, [teamId, gameId]);
+
   const toggleLock = async () => {
+    // When locking, save current held positions; when unlocking, preserve them
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isLocked: !game?.isLocked }),
+      body: JSON.stringify({
+        isLocked: !game?.isLocked,
+        heldPositions: heldPositions,
+      }),
     });
-    if (res.ok) fetchGame();
+    if (res.ok) fetchGame(false); // Don't overwrite held positions from DB on toggle
   };
 
   const handleBattingOrderUpdate = async (
@@ -183,7 +210,7 @@ export default function GamePlanPage() {
     });
 
     if (res.ok) {
-      await fetchGame();
+      await fetchGame(false);
     }
 
     setRegenerating(false);
@@ -214,10 +241,11 @@ export default function GamePlanPage() {
     });
 
     if (res.ok) {
-      await fetchGame();
+      await fetchGame(false);
     }
 
     setRegenerating(false);
+    saveHeldPositions(newHeld);
   };
 
   // Handle unassigning a pitcher: remove from pitching holds and regenerate
@@ -239,7 +267,7 @@ export default function GamePlanPage() {
     });
 
     if (res.ok) {
-      await fetchGame();
+      await fetchGame(false);
     }
 
     setRegenerating(false);
@@ -247,6 +275,59 @@ export default function GamePlanPage() {
 
   // Handle any position change: add to held positions and regenerate
   const handlePositionChange = async (inning: number, position: string, playerId: string) => {
+    // Check if the selected player is already assigned to a HELD position in this inning
+    const playerCurrentAssignment = assignments.find(
+      (a) => a.playerId === playerId && a.inning === inning && a.position !== position,
+    );
+    if (playerCurrentAssignment) {
+      const isCurrentPositionHeld = heldPositions.some(
+        (h) => h.inning === inning && h.position === playerCurrentAssignment.position && h.playerId === playerId,
+      );
+      if (isCurrentPositionHeld) {
+        // The player is locked at another position — show swap dialog
+        const currentPlayerAtTarget = assignments.find(
+          (a) => a.inning === inning && a.position === position,
+        );
+        const player = game?.team.players.find((p) => p.id === playerId);
+        setSwapDialog({
+          inning,
+          targetPosition: position,
+          selectedPlayerId: playerId,
+          selectedPlayerName: player?.name || playerCurrentAssignment.playerName,
+          currentPosition: playerCurrentAssignment.position,
+          currentPlayerId: currentPlayerAtTarget?.playerId || "",
+          currentPlayerName: currentPlayerAtTarget?.playerName || "",
+        });
+        return;
+      }
+    }
+
+    // Also check: if the TARGET position has a held player, and the selected player
+    // is already assigned elsewhere in this inning, offer a swap
+    const targetHeld = heldPositions.find(
+      (h) => h.inning === inning && h.position === position,
+    );
+    if (targetHeld && playerCurrentAssignment) {
+      const player = game?.team.players.find((p) => p.id === playerId);
+      const currentPlayerAtTarget = assignments.find(
+        (a) => a.inning === inning && a.position === position,
+      );
+      setSwapDialog({
+        inning,
+        targetPosition: position,
+        selectedPlayerId: playerId,
+        selectedPlayerName: player?.name || playerCurrentAssignment.playerName,
+        currentPosition: playerCurrentAssignment.position,
+        currentPlayerId: currentPlayerAtTarget?.playerId || "",
+        currentPlayerName: currentPlayerAtTarget?.playerName || "",
+      });
+      return;
+    }
+
+    await executePositionChange(inning, position, playerId);
+  };
+
+  const executePositionChange = async (inning: number, position: string, playerId: string) => {
     // Add or update held position
     const newHeld = [
       ...heldPositions.filter((h) => !(h.inning === inning && h.position === position)),
@@ -273,10 +354,55 @@ export default function GamePlanPage() {
     });
 
     if (res.ok) {
-      await fetchGame();
+      await fetchGame(false);
     }
 
     setRegenerating(false);
+    saveHeldPositions(newHeld);
+  };
+
+  const handleSwapConfirm = async () => {
+    if (!swapDialog) return;
+    const { inning, targetPosition, selectedPlayerId, currentPosition, currentPlayerId } = swapDialog;
+
+    // Build new held positions: remove old holds for both positions, add swapped holds
+    const newHeld = heldPositions.filter(
+      (h) => !(h.inning === inning && (h.position === targetPosition || h.position === currentPosition)),
+    );
+
+    // Lock selected player at target position
+    newHeld.push({ playerId: selectedPlayerId, inning, position: targetPosition });
+    // Lock current player at selected player's old position (field or bench)
+    if (currentPlayerId) {
+      newHeld.push({ playerId: currentPlayerId, inning, position: currentPosition });
+    }
+
+    setHeldPositions(newHeld);
+    setSwapDialog(null);
+
+    const lockedPitchers = pitchingMode
+      ? getCurrentPitchers()
+          .filter((p) => p.playerId !== null)
+          .map((p) => ({ playerId: p.playerId!, inning: p.inning }))
+      : [];
+
+    setRegenerating(true);
+
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lockedPitchers: lockedPitchers.length > 0 ? lockedPitchers : undefined,
+        lockedPositions: newHeld,
+      }),
+    });
+
+    if (res.ok) {
+      await fetchGame(false);
+    }
+
+    setRegenerating(false);
+    saveHeldPositions(newHeld);
   };
 
   const handleGameInfoUpdate = async (newOpponent: string, newDate: string) => {
@@ -337,7 +463,7 @@ export default function GamePlanPage() {
           )}
           {!game.isLocked && heldPositions.length > 0 && (
             <button
-              onClick={() => setHeldPositions([])}
+              onClick={() => { setHeldPositions([]); saveHeldPositions([]); }}
               className="text-sm px-3 py-1.5 rounded-lg font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
             >
               Clear Holds ({heldPositions.length})
@@ -389,6 +515,52 @@ export default function GamePlanPage() {
               Pool: {game.poolPlayers.map((p) => p.name).join(", ")}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Swap Position Dialog */}
+      {swapDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-3">Swap Positions?</h3>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">{swapDialog.selectedPlayerName}</span> is currently locked at{" "}
+                <span className="font-semibold">{swapDialog.currentPosition === "BENCH" ? "Bench" : swapDialog.currentPosition}</span>{" "}
+                in inning {swapDialog.inning}.
+              </p>
+            </div>
+            {swapDialog.currentPlayerName ? (
+              <p className="text-sm text-gray-700 mb-4">
+                Swap with <span className="font-semibold">{swapDialog.currentPlayerName}</span>{" "}
+                (currently at <span className="font-semibold">{swapDialog.targetPosition}</span>)?
+                <br />
+                <span className="text-gray-500 text-xs mt-1 block">
+                  {swapDialog.selectedPlayerName} &rarr; {swapDialog.targetPosition},{" "}
+                  {swapDialog.currentPlayerName} &rarr; {swapDialog.currentPosition === "BENCH" ? "Bench" : swapDialog.currentPosition}
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-gray-700 mb-4">
+                Move <span className="font-semibold">{swapDialog.selectedPlayerName}</span> to{" "}
+                <span className="font-semibold">{swapDialog.targetPosition}</span>?
+              </p>
+            )}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setSwapDialog(null)}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSwapConfirm}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors font-medium"
+              >
+                Confirm Swap
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
