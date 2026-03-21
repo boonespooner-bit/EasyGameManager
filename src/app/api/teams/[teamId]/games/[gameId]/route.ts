@@ -87,6 +87,7 @@ export async function GET(
     poolPlayers,
     gameBattingOrder,
     gameBalls,
+    heldPositions: game.heldPositions ?? [],
   });
 }
 
@@ -115,6 +116,7 @@ export async function PUT(
     const d = body.date;
     data.date = new Date(d.includes("T") ? d : d + "T12:00:00");
   }
+  if (body.heldPositions !== undefined) data.heldPositions = body.heldPositions;
 
   const game = await prisma.game.update({
     where: { id: gameId },
