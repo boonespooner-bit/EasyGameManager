@@ -365,44 +365,49 @@ export default function GamePlanPage() {
     if (!swapDialog) return;
     const { inning, targetPosition, selectedPlayerId, currentPosition, currentPlayerId } = swapDialog;
 
-    // Build new held positions: remove old holds for both positions, add swapped holds
+    // Direct swap: only move the two players involved, no regeneration
+    const updated = assignments.map((a) => {
+      // Move selected player to target position
+      if (a.playerId === selectedPlayerId && a.inning === inning && a.position === currentPosition) {
+        return { ...a, position: targetPosition as FieldPosition };
+      }
+      // Move displaced player to selected player's old position
+      if (currentPlayerId && a.playerId === currentPlayerId && a.inning === inning && a.position === targetPosition) {
+        return { ...a, position: currentPosition as FieldPosition };
+      }
+      return a;
+    });
+
+    // Update held positions to reflect the swap
     const newHeld = heldPositions.filter(
       (h) => !(h.inning === inning && (h.position === targetPosition || h.position === currentPosition)),
     );
-
-    // Lock selected player at target position
     newHeld.push({ playerId: selectedPlayerId, inning, position: targetPosition });
-    // Lock current player at selected player's old position (field or bench)
     if (currentPlayerId) {
       newHeld.push({ playerId: currentPlayerId, inning, position: currentPosition });
     }
 
+    setAssignments(updated);
     setHeldPositions(newHeld);
     setSwapDialog(null);
 
-    const lockedPitchers = pitchingMode
-      ? getCurrentPitchers()
-          .filter((p) => p.playerId !== null)
-          .map((p) => ({ playerId: p.playerId!, inning: p.inning }))
-      : [];
-
-    setRegenerating(true);
-
-    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lockedPitchers: lockedPitchers.length > 0 ? lockedPitchers : undefined,
-        lockedPositions: newHeld,
+    // Save both assignments and held positions directly (no regeneration)
+    setSaving(true);
+    await Promise.all([
+      fetch(`/api/teams/${teamId}/games/${gameId}/assignments`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignments: updated.map((a) => ({
+            playerId: a.playerId,
+            inning: a.inning,
+            position: a.position,
+          })),
+        }),
       }),
-    });
-
-    if (res.ok) {
-      await fetchGame(false);
-    }
-
-    setRegenerating(false);
-    saveHeldPositions(newHeld);
+      saveHeldPositions(newHeld),
+    ]);
+    setSaving(false);
   };
 
   const handleGameInfoUpdate = async (newOpponent: string, newDate: string) => {
