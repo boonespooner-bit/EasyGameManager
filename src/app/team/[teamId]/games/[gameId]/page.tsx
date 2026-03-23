@@ -478,7 +478,17 @@ export default function GamePlanPage() {
             onClick={() => window.print()}
             className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors no-print"
           >
-            Print
+            Print Game Plan
+          </button>
+          <button
+            onClick={() => {
+              document.body.classList.add("print-batting");
+              window.print();
+              document.body.classList.remove("print-batting");
+            }}
+            className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors no-print"
+          >
+            Print Batting Order
           </button>
           {!game.isLocked && (
             <button

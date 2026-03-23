@@ -278,8 +278,8 @@ export default function BaseballField({
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Print-only field view */}
-      <div className="print-only hidden">
+      {/* Print-only field view (full game plan) */}
+      <div className="print-only print-full hidden">
         <div style={{ textAlign: "center", marginBottom: "6px" }}>
           <h1 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>
             {teamName} vs. {opponent}
@@ -410,6 +410,38 @@ export default function BaseballField({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Print-only batting order view */}
+      <div className="print-only print-batting hidden">
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <h1 style={{ fontSize: "20px", fontWeight: "bold", margin: 0 }}>
+            {teamName} vs. {opponent}
+          </h1>
+          <p style={{ fontSize: "13px", color: "#555", margin: "4px 0" }}>
+            {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
+          </p>
+          <p style={{ fontSize: "15px", fontWeight: "bold", marginTop: "12px" }}>Batting Order</p>
+        </div>
+        <div style={{ maxWidth: "320px", margin: "0 auto" }}>
+          {battingOrder.map((b) => (
+            <div
+              key={b.playerId}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                padding: "6px 12px",
+                borderBottom: "1px solid #ddd",
+                fontSize: "14px",
+              }}
+            >
+              <span style={{ fontWeight: "bold", color: "#666", width: "28px", textAlign: "right", marginRight: "12px" }}>
+                {b.order}.
+              </span>
+              <span>{b.playerName}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Screen-only content below */}
