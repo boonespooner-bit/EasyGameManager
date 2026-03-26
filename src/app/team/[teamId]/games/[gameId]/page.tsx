@@ -68,6 +68,8 @@ export default function GamePlanPage() {
     currentPlayerId: string;
     currentPlayerName: string;
   } | null>(null);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterUpdating, setRosterUpdating] = useState<string | null>(null);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -439,6 +441,18 @@ export default function GamePlanPage() {
     await fetchGame();
   };
 
+  const handleRosterToggle = async (playerId: string, action: "exclude" | "include") => {
+    setRosterUpdating(playerId);
+    await fetch(`/api/teams/${teamId}/games/${gameId}/roster`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, playerId }),
+    });
+    setHeldPositions([]);
+    await fetchGame();
+    setRosterUpdating(null);
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
@@ -492,6 +506,18 @@ export default function GamePlanPage() {
           </button>
           {!game.isLocked && (
             <button
+              onClick={() => setRosterOpen(!rosterOpen)}
+              className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                rosterOpen
+                  ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Manage Roster
+            </button>
+          )}
+          {!game.isLocked && (
+            <button
               onClick={() => setPitchingMode(!pitchingMode)}
               className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
                 pitchingMode
@@ -530,6 +556,51 @@ export default function GamePlanPage() {
               Pool: {game.poolPlayers.map((p) => p.name).join(", ")}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Roster Management Panel */}
+      {rosterOpen && !game.isLocked && (
+        <div className="no-print bg-white border border-indigo-200 rounded-lg p-4 mb-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">Game Roster</h3>
+            <button
+              onClick={() => setRosterOpen(false)}
+              className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+            >
+              &times;
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Toggle players in or out of this game. Removing a player will regenerate the lineup.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {game.team.players
+              .filter((p) => !p.isPoolPlayer)
+              .sort((a, b) => a.battingOrder - b.battingOrder)
+              .map((player) => {
+                const isExcluded = game.exclusions?.some((e) => e.playerId === player.id) ?? false;
+                const isUpdating = rosterUpdating === player.id;
+                return (
+                  <button
+                    key={player.id}
+                    onClick={() => handleRosterToggle(player.id, isExcluded ? "include" : "exclude")}
+                    disabled={isUpdating}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                      isUpdating
+                        ? "opacity-50 cursor-wait"
+                        : isExcluded
+                          ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                          : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isExcluded ? "bg-red-400" : "bg-green-400"}`} />
+                    <span className="truncate">{player.name}</span>
+                    {isExcluded && <span className="text-xs text-red-500 ml-auto flex-shrink-0">Out</span>}
+                  </button>
+                );
+              })}
+          </div>
         </div>
       )}
 
