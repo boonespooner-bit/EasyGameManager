@@ -330,37 +330,51 @@ export default function GamePlanPage() {
   };
 
   const executePositionChange = async (inning: number, position: string, playerId: string) => {
-    // Add or update held position
+    // Direct swap: find where the selected player currently is, and who's at the target
+    const playerCurrentAssignment = assignments.find(
+      (a) => a.playerId === playerId && a.inning === inning,
+    );
+    const targetAssignment = assignments.find(
+      (a) => a.position === position && a.inning === inning,
+    );
+
+    const updated = assignments.map((a) => {
+      // Move selected player to target position
+      if (a.playerId === playerId && a.inning === inning && playerCurrentAssignment) {
+        return { ...a, position: position as FieldPosition };
+      }
+      // Move displaced player to selected player's old position
+      if (targetAssignment && a.playerId === targetAssignment.playerId && a.inning === inning && a.position === position && playerCurrentAssignment) {
+        return { ...a, position: playerCurrentAssignment.position as FieldPosition };
+      }
+      return a;
+    });
+
+    // Update held positions
     const newHeld = [
       ...heldPositions.filter((h) => !(h.inning === inning && h.position === position)),
       { playerId, inning, position },
     ];
     setHeldPositions(newHeld);
+    setAssignments(updated);
 
-    // Build locked pitchers from pitching mode holds
-    const lockedPitchers = pitchingMode
-      ? getCurrentPitchers()
-          .filter((p) => p.playerId !== null)
-          .map((p) => ({ playerId: p.playerId!, inning: p.inning }))
-      : [];
-
-    setRegenerating(true);
-
-    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lockedPitchers: lockedPitchers.length > 0 ? lockedPitchers : undefined,
-        lockedPositions: newHeld,
+    // Save directly — no regeneration
+    setSaving(true);
+    await Promise.all([
+      fetch(`/api/teams/${teamId}/games/${gameId}/assignments`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignments: updated.map((a) => ({
+            playerId: a.playerId,
+            inning: a.inning,
+            position: a.position,
+          })),
+        }),
       }),
-    });
-
-    if (res.ok) {
-      await fetchGame(false);
-    }
-
-    setRegenerating(false);
-    saveHeldPositions(newHeld);
+      saveHeldPositions(newHeld),
+    ]);
+    setSaving(false);
   };
 
   const handleSwapConfirm = async () => {
