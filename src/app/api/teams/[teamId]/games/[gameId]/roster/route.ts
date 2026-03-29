@@ -4,6 +4,12 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateGamePlan, buildSeasonHistory } from "@/lib/algorithm";
 
+type RosterAction =
+  | { action: "exclude"; playerId: string }
+  | { action: "include"; playerId: string }
+  | { action: "addPool"; name: string; ratings: Record<string, number> }
+  | { action: "removePool"; playerId: string };
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ teamId: string; gameId: string }> },
@@ -24,30 +30,57 @@ export async function POST(
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.isLocked) return NextResponse.json({ error: "Game is locked" }, { status: 400 });
 
-  const body = await req.json() as {
-    action: "exclude" | "include";
-    playerId: string;
-  };
-  const { action, playerId } = body;
+  const body = await req.json() as RosterAction;
 
-  if (action === "exclude") {
-    // Add exclusion
+  if (body.action === "exclude") {
     try {
       await prisma.gameExclusion.create({
-        data: { gameId, playerId },
+        data: { gameId, playerId: body.playerId },
       });
     } catch {
       // Already excluded or table doesn't exist
     }
-  } else if (action === "include") {
-    // Remove exclusion
+  } else if (body.action === "include") {
     try {
       await prisma.gameExclusion.deleteMany({
-        where: { gameId, playerId },
+        where: { gameId, playerId: body.playerId },
       });
     } catch {
       // Not excluded or table doesn't exist
     }
+  } else if (body.action === "addPool") {
+    // Create a new pool player linked to this game
+    const allPlayers = await prisma.player.findMany({
+      where: { teamId },
+      select: { battingOrder: true },
+    });
+    const maxOrder = allPlayers.length > 0
+      ? Math.max(...allPlayers.map((p) => p.battingOrder))
+      : 0;
+
+    await prisma.player.create({
+      data: {
+        name: body.name,
+        teamId,
+        battingOrder: maxOrder + 1,
+        isPoolPlayer: true,
+        poolGameId: gameId,
+        ratings: {
+          create: Object.entries(body.ratings).map(([position, rating]) => ({
+            position,
+            rating: rating as number,
+          })),
+        },
+      },
+    });
+  } else if (body.action === "removePool") {
+    // Delete pool player and their assignments
+    await prisma.inningAssignment.deleteMany({
+      where: { gameId, playerId: body.playerId },
+    });
+    await prisma.player.delete({
+      where: { id: body.playerId },
+    });
   }
 
   // Regenerate the game plan with updated roster
@@ -106,7 +139,6 @@ export async function POST(
     })),
   });
 
-  // Clear held positions since roster changed
   await prisma.game.update({
     where: { id: gameId },
     data: { heldPositions: [] },

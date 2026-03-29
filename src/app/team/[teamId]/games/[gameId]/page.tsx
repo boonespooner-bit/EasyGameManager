@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from "react";
 import BaseballField from "@/components/BaseballField";
 import Link from "next/link";
 import type { FieldPosition } from "@/types";
-import { INNINGS } from "@/types";
+import { INNINGS, POSITIONS } from "@/types";
 
 interface Assignment {
   playerId: string;
@@ -70,6 +70,13 @@ export default function GamePlanPage() {
   } | null>(null);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [rosterUpdating, setRosterUpdating] = useState<string | null>(null);
+  const [showPoolForm, setShowPoolForm] = useState(false);
+  const [poolName, setPoolName] = useState("");
+  const [poolRatings, setPoolRatings] = useState<Record<string, number>>(() => {
+    const r: Record<string, number> = {};
+    POSITIONS.forEach((p) => (r[p] = 5));
+    return r;
+  });
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -467,6 +474,36 @@ export default function GamePlanPage() {
     setRosterUpdating(null);
   };
 
+  const handleAddPoolPlayer = async () => {
+    if (!poolName.trim()) return;
+    setRosterUpdating("adding-pool");
+    await fetch(`/api/teams/${teamId}/games/${gameId}/roster`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "addPool", name: poolName.trim(), ratings: poolRatings }),
+    });
+    setPoolName("");
+    const r: Record<string, number> = {};
+    POSITIONS.forEach((p) => (r[p] = 5));
+    setPoolRatings(r);
+    setShowPoolForm(false);
+    setHeldPositions([]);
+    await fetchGame();
+    setRosterUpdating(null);
+  };
+
+  const handleRemovePoolPlayer = async (playerId: string) => {
+    setRosterUpdating(playerId);
+    await fetch(`/api/teams/${teamId}/games/${gameId}/roster`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "removePool", playerId }),
+    });
+    setHeldPositions([]);
+    await fetchGame();
+    setRosterUpdating(null);
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
@@ -579,15 +616,17 @@ export default function GamePlanPage() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-800">Game Roster</h3>
             <button
-              onClick={() => setRosterOpen(false)}
+              onClick={() => { setRosterOpen(false); setShowPoolForm(false); }}
               className="text-gray-400 hover:text-gray-600 text-lg leading-none"
             >
               &times;
             </button>
           </div>
           <p className="text-xs text-gray-500 mb-3">
-            Toggle players in or out of this game. Removing a player will regenerate the lineup.
+            Toggle players in or out of this game. Changes will regenerate the lineup.
           </p>
+
+          {/* Roster Players */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {game.team.players
               .filter((p) => !p.isPoolPlayer)
@@ -599,13 +638,15 @@ export default function GamePlanPage() {
                   <button
                     key={player.id}
                     onClick={() => handleRosterToggle(player.id, isExcluded ? "include" : "exclude")}
-                    disabled={isUpdating}
+                    disabled={!!rosterUpdating}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                       isUpdating
                         ? "opacity-50 cursor-wait"
-                        : isExcluded
-                          ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-                          : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                        : rosterUpdating
+                          ? "opacity-70 cursor-not-allowed"
+                          : isExcluded
+                            ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                            : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
                     }`}
                   >
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isExcluded ? "bg-red-400" : "bg-green-400"}`} />
@@ -614,6 +655,96 @@ export default function GamePlanPage() {
                   </button>
                 );
               })}
+          </div>
+
+          {/* Pool Players */}
+          <div className="mt-4 pt-3 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Pool Players</h4>
+            </div>
+
+            {/* Existing pool players */}
+            {game.poolPlayers && game.poolPlayers.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-3">
+                {game.poolPlayers.map((player) => {
+                  const isUpdating = rosterUpdating === player.id;
+                  return (
+                    <div
+                      key={player.id}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-blue-50 text-blue-700 border border-blue-200 ${
+                        isUpdating ? "opacity-50" : ""
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-400" />
+                      <span className="truncate">{player.name}</span>
+                      <button
+                        onClick={() => handleRemovePoolPlayer(player.id)}
+                        disabled={!!rosterUpdating}
+                        className="text-red-400 hover:text-red-600 ml-auto flex-shrink-0 text-xs font-bold disabled:opacity-50"
+                        title="Remove pool player"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add pool player form */}
+            {showPoolForm ? (
+              <div className="border border-blue-200 rounded-lg p-3 bg-blue-50/50 space-y-3">
+                <input
+                  type="text"
+                  value={poolName}
+                  onChange={(e) => setPoolName(e.target.value)}
+                  placeholder="Pool player name"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  autoFocus
+                />
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                  {POSITIONS.map((pos) => (
+                    <div key={pos} className="flex items-center gap-1">
+                      <label className="text-xs text-gray-600 w-8">{pos}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={9}
+                        value={poolRatings[pos]}
+                        onChange={(e) =>
+                          setPoolRatings({ ...poolRatings, [pos]: parseInt(e.target.value) || 1 })
+                        }
+                        className="w-14 border border-gray-300 rounded px-1.5 py-1 text-xs text-center"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400">Rate 1-9 per position, or 0 for DNP</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAddPoolPlayer}
+                    disabled={!poolName.trim() || !!rosterUpdating}
+                    className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
+                  >
+                    {rosterUpdating === "adding-pool" ? "Adding..." : "Add Player"}
+                  </button>
+                  <button
+                    onClick={() => setShowPoolForm(false)}
+                    className="text-gray-500 text-sm hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowPoolForm(true)}
+                disabled={!!rosterUpdating}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
+              >
+                + Add Pool Player
+              </button>
+            )}
           </div>
         </div>
       )}
