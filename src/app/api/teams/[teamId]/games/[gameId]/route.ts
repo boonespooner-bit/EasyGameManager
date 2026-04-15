@@ -80,6 +80,37 @@ export async function GET(
     (p) => !p.isPoolPlayer || poolPlayerIds.has(p.id),
   );
 
+  // Find the most recent game prior to this one (by date) for the same team
+  // and return who sat on the bench in inning 1.
+  let previousGameBench:
+    | { date: string; opponent: string; players: string[] }
+    | null = null;
+  try {
+    const prevGame = await prisma.game.findFirst({
+      where: {
+        teamId: game.teamId,
+        date: { lt: game.date },
+        id: { not: game.id },
+      },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      include: {
+        innings: {
+          where: { inning: 1, position: "BENCH" },
+          include: { player: { select: { name: true } } },
+        },
+      },
+    });
+    if (prevGame) {
+      previousGameBench = {
+        date: prevGame.date.toISOString(),
+        opponent: prevGame.opponent,
+        players: prevGame.innings.map((i) => i.player.name),
+      };
+    }
+  } catch {
+    // Defensive: don't break the page if the query fails
+  }
+
   return NextResponse.json({
     ...game,
     team: { ...game.team, players: filteredPlayers },
@@ -88,6 +119,7 @@ export async function GET(
     gameBattingOrder,
     gameBalls,
     heldPositions: game.heldPositions ?? [],
+    previousGameBench,
   });
 }
 
