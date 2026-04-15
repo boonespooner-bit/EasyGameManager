@@ -357,11 +357,14 @@ export default function GamePlanPage() {
       return a;
     });
 
-    // Update held positions
-    const newHeld = [
-      ...heldPositions.filter((h) => !(h.inning === inning && h.position === position)),
-      { playerId, inning, position },
-    ];
+    // Update held positions — don't treat BENCH as a held position
+    const filteredHeld = heldPositions.filter(
+      (h) => !(h.inning === inning && h.position === position) &&
+             !(h.inning === inning && h.playerId === playerId),
+    );
+    const newHeld = position === "BENCH"
+      ? filteredHeld
+      : [...filteredHeld, { playerId, inning, position }];
     setHeldPositions(newHeld);
     setAssignments(updated);
 
@@ -401,12 +404,15 @@ export default function GamePlanPage() {
       return a;
     });
 
-    // Update held positions to reflect the swap
+    // Update held positions to reflect the swap — don't treat BENCH as a held position
     const newHeld = heldPositions.filter(
-      (h) => !(h.inning === inning && (h.position === targetPosition || h.position === currentPosition)),
+      (h) => !(h.inning === inning && (h.position === targetPosition || h.position === currentPosition)) &&
+             !(h.inning === inning && (h.playerId === selectedPlayerId || (currentPlayerId && h.playerId === currentPlayerId))),
     );
-    newHeld.push({ playerId: selectedPlayerId, inning, position: targetPosition });
-    if (currentPlayerId) {
+    if (targetPosition !== "BENCH") {
+      newHeld.push({ playerId: selectedPlayerId, inning, position: targetPosition });
+    }
+    if (currentPlayerId && currentPosition !== "BENCH") {
       newHeld.push({ playerId: currentPlayerId, inning, position: currentPosition });
     }
 
