@@ -44,6 +44,7 @@ interface Props {
   gameBalls?: GameBallData[];
   onGameBallUpdate?: (playerId: string, reason: string, id?: string) => void;
   onGameBallRemove?: (id: string) => void;
+  previousGameBench?: { date: string; opponent: string; players: string[] } | null;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -79,6 +80,7 @@ export default function BaseballField({
   gameBalls = [],
   onGameBallUpdate,
   onGameBallRemove,
+  previousGameBench,
 }: Props) {
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -651,6 +653,18 @@ export default function BaseballField({
                 );
               })}
             </div>
+            {previousGameBench && previousGameBench.players.length > 0 && (
+              <div className="no-print mt-2 inline-block bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-900">
+                <div className="font-semibold text-amber-800">
+                  Last game bench (Inn 1)
+                  <span className="font-normal text-amber-700">
+                    {" "}— vs {previousGameBench.opponent},{" "}
+                    {new Date(previousGameBench.date).toLocaleDateString()}
+                  </span>
+                </div>
+                <div className="mt-0.5">{previousGameBench.players.join(", ")}</div>
+              </div>
+            )}
           </div>
 
           {/* Game Balls */}
