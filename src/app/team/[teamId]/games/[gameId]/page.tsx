@@ -617,19 +617,6 @@ export default function GamePlanPage() {
         </div>
       )}
 
-      {game.previousGameBench && game.previousGameBench.players.length > 0 && (
-        <div className="no-print mb-3 inline-block bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-900">
-          <div className="font-semibold text-amber-800">
-            Last game bench (Inn 1)
-            <span className="font-normal text-amber-700">
-              {" "}— vs {game.previousGameBench.opponent},{" "}
-              {new Date(game.previousGameBench.date).toLocaleDateString()}
-            </span>
-          </div>
-          <div className="mt-0.5">{game.previousGameBench.players.join(", ")}</div>
-        </div>
-      )}
-
       {/* Roster Management Panel */}
       {rosterOpen && !game.isLocked && (
         <div className="no-print bg-white border border-indigo-200 rounded-lg p-4 mb-4 shadow-sm">
@@ -841,6 +828,7 @@ export default function GamePlanPage() {
         }))}
         onGameBallUpdate={handleGameBallUpdate}
         onGameBallRemove={handleGameBallRemove}
+        previousGameBench={game.previousGameBench}
       />
     </div>
   );
