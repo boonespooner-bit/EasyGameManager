@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { POSITIONS, INNINGS, type FieldPosition } from "@/types";
 
 interface Assignment {
@@ -92,6 +92,117 @@ export default function BaseballField({
   const [editingGameBallIndex, setEditingGameBallIndex] = useState<number | null>(null);
   const [gameBallPlayerId, setGameBallPlayerId] = useState("");
   const [gameBallReason, setGameBallReason] = useState("");
+  const [showSitModal, setShowSitModal] = useState(false);
+  const [skippedSwaps, setSkippedSwaps] = useState<Set<string>>(new Set());
+
+  // Players who have not sat (no BENCH assignment) at all in the game
+  const notSatPlayers = useMemo(() => {
+    const benchedIds = new Set<string>();
+    const allIds = new Set<string>();
+    const nameMap = new Map<string, string>();
+    for (const a of assignments) {
+      allIds.add(a.playerId);
+      nameMap.set(a.playerId, a.playerName);
+      if (a.position === "BENCH") benchedIds.add(a.playerId);
+    }
+    return Array.from(allIds)
+      .filter((id) => !benchedIds.has(id))
+      .map((id) => ({ playerId: id, playerName: nameMap.get(id) || "" }));
+  }, [assignments]);
+
+  // Rating lookup by playerId -> position -> rating
+  const ratingLookup = useMemo(() => {
+    const m = new Map<string, Map<string, number>>();
+    for (const p of allPlayers || []) {
+      const r = new Map<string, number>();
+      for (const rating of p.ratings || []) r.set(rating.position, rating.rating);
+      m.set(p.id, r);
+    }
+    return m;
+  }, [allPlayers]);
+
+  // Bench count per player (how many innings they currently sit)
+  const benchCountMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const a of assignments) {
+      if (a.position === "BENCH") counts[a.playerId] = (counts[a.playerId] || 0) + 1;
+    }
+    return counts;
+  }, [assignments]);
+
+  // For each not-sat player, suggest the best inning + bench player to swap with.
+  // Prefers swapping in a benched player who has sat the most so far (to balance
+  // bench distribution) and who can play the position well.
+  const sitSuggestions = useMemo(() => {
+    type Suggestion = {
+      notSatPlayerId: string;
+      notSatPlayerName: string;
+      inning: number;
+      position: string;
+      benchPlayerId: string;
+      benchPlayerName: string;
+      benchCount: number;
+      rating: number;
+    };
+    const suggestions: Suggestion[] = [];
+    for (const np of notSatPlayers) {
+      const candidates: Suggestion[] = [];
+      for (const inning of INNINGS) {
+        const npAssignment = assignments.find(
+          (a) => a.playerId === np.playerId && a.inning === inning,
+        );
+        if (!npAssignment || npAssignment.position === "BENCH") continue;
+        const pos = npAssignment.position;
+        const benched = assignments.filter(
+          (a) => a.position === "BENCH" && a.inning === inning,
+        );
+        for (const b of benched) {
+          const rating = ratingLookup.get(b.playerId)?.get(pos);
+          if (rating === 0) continue; // DNP for this position
+          const key = `${np.playerId}|${inning}|${b.playerId}`;
+          if (skippedSwaps.has(key)) continue;
+          candidates.push({
+            notSatPlayerId: np.playerId,
+            notSatPlayerName: np.playerName,
+            inning,
+            position: pos,
+            benchPlayerId: b.playerId,
+            benchPlayerName: b.playerName,
+            benchCount: benchCountMap[b.playerId] || 0,
+            rating: rating ?? 5,
+          });
+        }
+      }
+      candidates.sort((a, b) => {
+        if (b.benchCount !== a.benchCount) return b.benchCount - a.benchCount;
+        return b.rating - a.rating;
+      });
+      if (candidates.length > 0) suggestions.push(candidates[0]);
+    }
+    return suggestions;
+  }, [notSatPlayers, assignments, ratingLookup, benchCountMap, skippedSwaps]);
+
+  const approveSwap = (s: (typeof sitSuggestions)[number]) => {
+    if (!onUpdate) return;
+    const updated = assignments.map((a) => {
+      if (a.playerId === s.notSatPlayerId && a.inning === s.inning && a.position === s.position) {
+        return { ...a, position: "BENCH" as FieldPosition };
+      }
+      if (a.playerId === s.benchPlayerId && a.inning === s.inning && a.position === "BENCH") {
+        return { ...a, position: s.position as FieldPosition };
+      }
+      return a;
+    });
+    onUpdate(updated);
+  };
+
+  const skipSuggestion = (s: (typeof sitSuggestions)[number]) => {
+    setSkippedSwaps((prev) => {
+      const next = new Set(prev);
+      next.add(`${s.notSatPlayerId}|${s.inning}|${s.benchPlayerId}`);
+      return next;
+    });
+  };
 
   // Build bench color map: players sitting 2 innings get a shared color
   const benchColorMap = (() => {
@@ -653,6 +764,27 @@ export default function BaseballField({
                 );
               })}
             </div>
+            {notSatPlayers.length > 0 && (
+              <div className="no-print mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-600 font-medium">Not yet benched:</span>
+                {notSatPlayers.map((p) => (
+                  <span
+                    key={p.playerId}
+                    className="text-xs bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded"
+                  >
+                    {p.playerName}
+                  </span>
+                ))}
+                {!isLocked && onUpdate && (
+                  <button
+                    onClick={() => setShowSitModal(true)}
+                    className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1 rounded font-medium transition-colors"
+                  >
+                    Suggest sit times
+                  </button>
+                )}
+              </div>
+            )}
             {previousGameBench && previousGameBench.players.length > 0 && (
               <div className="no-print mt-2 inline-block bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-900">
                 <div className="font-semibold text-amber-800">
@@ -772,6 +904,77 @@ export default function BaseballField({
           </div>
         </div>
       </div>
+
+      {showSitModal && (
+        <div className="no-print fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-gray-900">Suggested sit times</h3>
+              <button
+                onClick={() => setShowSitModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Approve each swap to give players who haven&apos;t sat a turn on the bench.
+            </p>
+            {sitSuggestions.length === 0 ? (
+              <p className="text-sm text-gray-600 py-4 text-center">
+                {notSatPlayers.length === 0
+                  ? "All players have sat at least once."
+                  : "No valid swaps available for the remaining players."}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {sitSuggestions.map((s) => (
+                  <div
+                    key={`${s.notSatPlayerId}-${s.inning}-${s.benchPlayerId}`}
+                    className="border border-gray-200 rounded-lg p-3 bg-gray-50"
+                  >
+                    <div className="text-sm text-gray-800 mb-2">
+                      <div className="font-semibold text-gray-900 mb-1">
+                        Inning {s.inning}
+                      </div>
+                      Sit <span className="font-semibold">{s.notSatPlayerName}</span>{" "}
+                      <span className="text-gray-500">(currently {s.position})</span>
+                      <br />
+                      Bring in <span className="font-semibold">{s.benchPlayerName}</span>{" "}
+                      <span className="text-gray-500">
+                        (sat {s.benchCount}× so far) at {s.position}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => skipSuggestion(s)}
+                        className="px-3 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Skip
+                      </button>
+                      <button
+                        onClick={() => approveSwap(s)}
+                        className="px-3 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-500 font-medium transition-colors"
+                      >
+                        Approve
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowSitModal(false)}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
