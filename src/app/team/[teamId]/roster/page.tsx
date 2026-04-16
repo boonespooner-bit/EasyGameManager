@@ -15,6 +15,7 @@ interface Player {
   id: string;
   name: string;
   battingOrder: number;
+  hasPitched: boolean;
   ratings: PlayerRating[];
 }
 
@@ -46,15 +47,31 @@ export default function RosterPage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pitchingToggles, setPitchingToggles] = useState<Record<string, boolean>>({});
 
   const fetchTeam = useCallback(async () => {
     const res = await fetch(`/api/teams/${teamId}`);
     if (res.ok) {
       const data = await res.json();
       setTeam(data);
+      const toggles: Record<string, boolean> = {};
+      for (const p of (data.players as Player[])) {
+        toggles[p.id] = p.hasPitched ?? false;
+      }
+      setPitchingToggles(toggles);
     }
     setLoading(false);
   }, [teamId]);
+
+  const handlePitchedToggle = async (playerId: string) => {
+    const next = !pitchingToggles[playerId];
+    setPitchingToggles((prev) => ({ ...prev, [playerId]: next }));
+    await fetch(`/api/teams/${teamId}/players/${playerId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hasPitched: next }),
+    });
+  };
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -244,6 +261,83 @@ export default function RosterPage() {
           <p className="text-gray-500">No players yet. Add your 12 players to get started!</p>
         </div>
       )}
+
+      {/* Pitching Tracker */}
+      {sortedPlayers.length > 0 && (() => {
+        const pitchedCount = sortedPlayers.filter((p) => pitchingToggles[p.id]).length;
+        const notYet = sortedPlayers.filter((p) => !pitchingToggles[p.id]);
+        const hasPitched = sortedPlayers.filter((p) => pitchingToggles[p.id]);
+        return (
+          <div className="mt-8">
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="text-lg font-bold text-gray-900">Pitching Tracker</h2>
+              <span className="text-sm text-gray-500">
+                {pitchedCount} of {sortedPlayers.length} have taken the mound
+              </span>
+              {pitchedCount === sortedPlayers.length && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">
+                  All players have pitched!
+                </span>
+              )}
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              {notYet.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Needs to pitch ({notYet.length})
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {notYet.map((p) => (
+                      <label
+                        key={p.id}
+                        className="flex items-center gap-2 cursor-pointer group px-3 py-2 rounded-lg border border-orange-100 bg-orange-50 hover:bg-orange-100 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={false}
+                          onChange={() => handlePitchedToggle(p.id)}
+                          className="w-4 h-4 rounded accent-green-600 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-800 truncate">{p.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {hasPitched.length > 0 && (
+                <div>
+                  {notYet.length > 0 && (
+                    <div className="border-t border-gray-100 mb-3" />
+                  )}
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Has pitched ({hasPitched.length})
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {hasPitched.map((p) => (
+                      <label
+                        key={p.id}
+                        className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-green-100 bg-green-50 hover:bg-green-100 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={true}
+                          onChange={() => handlePitchedToggle(p.id)}
+                          className="w-4 h-4 rounded accent-green-600 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-600 truncate line-through decoration-green-400">
+                          {p.name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Coaches Section */}
       <div className="mt-8">

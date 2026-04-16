@@ -84,6 +84,7 @@ model Player {
   battingOrder Int
   isPoolPlayer Boolean            @default(false)
   poolGameId   String?
+  hasPitched   Boolean            @default(false)
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   team         Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
