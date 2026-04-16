@@ -50,6 +50,30 @@ export async function PUT(
   return NextResponse.json(updated);
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ teamId: string; playerId: string }> },
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { teamId, playerId } = await params;
+  const userId = (session.user as { id: string }).id;
+  const member = await prisma.teamMember.findUnique({
+    where: { userId_teamId: { userId, teamId } },
+  });
+  if (!member || member.role === "viewer") {
+    return NextResponse.json({ error: "No permission" }, { status: 403 });
+  }
+
+  const { hasPitched } = await req.json();
+  const player = await prisma.player.update({
+    where: { id: playerId },
+    data: { hasPitched },
+  });
+  return NextResponse.json(player);
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ teamId: string; playerId: string }> },
