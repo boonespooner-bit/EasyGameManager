@@ -6,6 +6,8 @@ import { POSITIONS, INNINGS, type FieldPosition } from "@/types";
 interface Assignment {
   playerId: string;
   playerName: string;
+  playerFirstName?: string;
+  jerseyNumber?: string | null;
   inning: number;
   position: FieldPosition;
 }
@@ -25,15 +27,15 @@ interface GameBallData {
 
 interface Props {
   assignments: Assignment[];
-  battingOrder: { playerId: string; playerName: string; order: number }[];
+  battingOrder: { playerId: string; playerName: string; jerseyNumber?: string | null; order: number }[];
   opponent: string;
   date: string;
   teamName: string;
   isLocked: boolean;
   onUpdate?: (assignments: Assignment[]) => void;
-  onBattingOrderUpdate?: (order: { playerId: string; playerName: string; order: number }[]) => void;
+  onBattingOrderUpdate?: (order: { playerId: string; playerName: string; jerseyNumber?: string | null; order: number }[]) => void;
   pitchingMode?: boolean;
-  allPlayers?: { id: string; name: string; ratings?: { position: string; rating: number }[] }[];
+  allPlayers?: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPositionChange?: (inning: number, position: string, playerId: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
@@ -100,14 +102,16 @@ export default function BaseballField({
     const benchedIds = new Set<string>();
     const allIds = new Set<string>();
     const nameMap = new Map<string, string>();
+    const firstNameMap = new Map<string, string>();
     for (const a of assignments) {
       allIds.add(a.playerId);
       nameMap.set(a.playerId, a.playerName);
+      firstNameMap.set(a.playerId, a.playerFirstName || a.playerName.split(" ")[0]);
       if (a.position === "BENCH") benchedIds.add(a.playerId);
     }
     return Array.from(allIds)
       .filter((id) => !benchedIds.has(id))
-      .map((id) => ({ playerId: id, playerName: nameMap.get(id) || "" }));
+      .map((id) => ({ playerId: id, playerName: nameMap.get(id) || "", playerFirstName: firstNameMap.get(id) || "" }));
   }, [assignments]);
 
   // Rating lookup by playerId -> position -> rating
@@ -163,11 +167,11 @@ export default function BaseballField({
           if (skippedSwaps.has(key)) continue;
           candidates.push({
             notSatPlayerId: np.playerId,
-            notSatPlayerName: np.playerName,
+            notSatPlayerName: np.playerFirstName,
             inning,
             position: pos,
             benchPlayerId: b.playerId,
-            benchPlayerName: b.playerName,
+            benchPlayerName: b.playerFirstName || b.playerName.split(" ")[0],
             benchCount: benchCountMap[b.playerId] || 0,
             rating: rating ?? 5,
           });
@@ -260,7 +264,7 @@ export default function BaseballField({
   const getPlayersAtPosition = (position: string) => {
     return INNINGS.map((inning) => {
       const a = assignments.find((a) => a.position === position && a.inning === inning);
-      return a ? { inning, playerId: a.playerId, name: a.playerName } : null;
+      return a ? { inning, playerId: a.playerId, name: a.playerFirstName || a.playerName.split(" ")[0] } : null;
     });
   };
 
@@ -269,7 +273,7 @@ export default function BaseballField({
       inning,
       players: assignments
         .filter((a) => a.position === "BENCH" && a.inning === inning)
-        .map((a) => ({ playerId: a.playerId, name: a.playerName })),
+        .map((a) => ({ playerId: a.playerId, name: a.playerFirstName || a.playerName.split(" ")[0] })),
     }));
   };
 
@@ -365,14 +369,14 @@ export default function BaseballField({
       inning,
       players: assignments
         .filter((a) => a.position === "BENCH" && a.inning === inning)
-        .map((a) => a.playerName),
+        .map((a) => a.playerFirstName || a.playerName.split(" ")[0]),
     }));
   };
 
   const getPlayersForPrint = (position: string) => {
     return INNINGS.map((inning) => {
       const a = assignments.find((a) => a.position === position && a.inning === inning);
-      return a ? a.playerName : "\u2014";
+      return a ? (a.playerFirstName || a.playerName.split(" ")[0]) : "\u2014";
     });
   };
 
@@ -506,7 +510,7 @@ export default function BaseballField({
           <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: "9px" }}>
             {battingOrder.map((b) => (
               <span key={b.playerId}>
-                <span style={{ fontWeight: "bold", color: "#666" }}>{b.order}.</span> {b.playerName}
+                <span style={{ fontWeight: "bold", color: "#666" }}>{b.order}.</span> {b.playerName}{b.jerseyNumber ? ` #${b.jerseyNumber}` : ""}
               </span>
             ))}
           </div>
@@ -551,7 +555,7 @@ export default function BaseballField({
               <span style={{ fontWeight: "bold", color: "#666", width: "28px", textAlign: "right", marginRight: "12px" }}>
                 {b.order}.
               </span>
-              <span>{b.playerName}</span>
+              <span>{b.playerName}{b.jerseyNumber ? ` #${b.jerseyNumber}` : ""}</span>
             </div>
           ))}
         </div>
@@ -772,7 +776,7 @@ export default function BaseballField({
                     key={p.playerId}
                     className="text-xs bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded"
                   >
-                    {p.playerName}
+                    {p.playerFirstName}
                   </span>
                 ))}
                 {!isLocked && onUpdate && (
@@ -898,7 +902,7 @@ export default function BaseballField({
               >
                 <span className="text-gray-300 text-lg leading-none select-none mr-1">&#8801;</span>
                 <span className="text-xs font-bold text-gray-400 w-4">{b.order}</span>
-                <span className="text-sm">{b.playerName}</span>
+                <span className="text-sm">{b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}</span>
               </div>
             ))}
           </div>
@@ -987,7 +991,7 @@ function PitcherBox({
   disabled,
 }: {
   players: ({ inning: number; playerId: string; name: string } | null)[];
-  allPlayers: { id: string; name: string; ratings?: { position: string; rating: number }[] }[];
+  allPlayers: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPitcherUnassign?: (inning: number) => void;
   disabled: boolean;
@@ -1003,9 +1007,10 @@ function PitcherBox({
   });
 
   const filtered = search.trim()
-    ? eligiblePitchers.filter((p) =>
-        p.name.toLowerCase().includes(search.toLowerCase()),
-      )
+    ? eligiblePitchers.filter((p) => {
+        const s = search.toLowerCase();
+        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
+      })
     : eligiblePitchers;
 
   const selectPlayer = (inning: number, playerId: string) => {
@@ -1067,7 +1072,7 @@ function PitcherBox({
                             selectPlayer(inning, pl.id);
                           }}
                         >
-                          {pl.name}
+                          {pl.firstName || pl.name}
                         </button>
                       ))}
                       <button
@@ -1129,7 +1134,7 @@ function PositionBox({
   onDragStart: (pos: string, inning: number) => void;
   onDrop: (pos: string, inning: number) => void;
   isDragging: boolean;
-  allPlayers?: { id: string; name: string; ratings?: { position: string; rating: number }[] }[];
+  allPlayers?: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPositionChange?: (inning: number, position: string, playerId: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
   disabled?: boolean;
@@ -1145,9 +1150,10 @@ function PositionBox({
   });
 
   const filtered = search.trim()
-    ? eligiblePlayers.filter((p) =>
-        p.name.toLowerCase().includes(search.toLowerCase()),
-      )
+    ? eligiblePlayers.filter((p) => {
+        const s = search.toLowerCase();
+        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
+      })
     : eligiblePlayers;
 
   const selectPlayer = (inning: number, playerId: string) => {
@@ -1203,7 +1209,7 @@ function PositionBox({
                             selectPlayer(inning, pl.id);
                           }}
                         >
-                          {pl.name}
+                          {pl.firstName || pl.name}
                         </button>
                       ))}
                       <button
@@ -1262,7 +1268,7 @@ function GameBallSection({
   onRemove,
 }: {
   gameBall?: { playerId: string; playerName: string; reason: string } | null;
-  allPlayers?: { id: string; name: string }[];
+  allPlayers?: { id: string; name: string; firstName?: string }[];
   editing: boolean;
   selectedPlayerId: string;
   reason: string;

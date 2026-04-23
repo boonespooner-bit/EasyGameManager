@@ -96,7 +96,7 @@ export async function GET(
       include: {
         innings: {
           where: { inning: 1, position: "BENCH" },
-          include: { player: { select: { name: true } } },
+          include: { player: { select: { name: true, firstName: true } } },
         },
       },
     });
@@ -104,7 +104,7 @@ export async function GET(
       previousGameBench = {
         date: prevGame.date.toISOString(),
         opponent: prevGame.opponent,
-        players: prevGame.innings.map((i) => i.player.name),
+        players: prevGame.innings.map((i) => i.player.firstName || i.player.name.split(" ")[0]),
       };
     }
   } catch {

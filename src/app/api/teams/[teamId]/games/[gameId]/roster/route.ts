@@ -61,6 +61,7 @@ export async function POST(
     await prisma.player.create({
       data: {
         name: body.name,
+        firstName: body.name,
         teamId,
         battingOrder: maxOrder + 1,
         isPoolPlayer: true,
