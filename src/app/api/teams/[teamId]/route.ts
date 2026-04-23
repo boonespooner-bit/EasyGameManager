@@ -38,7 +38,19 @@ export async function GET(
     players: team.players.filter((p) => !p.isPoolPlayer),
   };
 
-  return NextResponse.json(filtered);
+  const rosterIds = filtered.players.map((p) => p.id);
+  let gameBallCounts: { playerId: string; count: number }[] = [];
+  try {
+    const balls = await prisma.gameBall.findMany({
+      where: { playerId: { in: rosterIds } },
+      select: { playerId: true },
+    });
+    const countMap: Record<string, number> = {};
+    for (const b of balls) countMap[b.playerId] = (countMap[b.playerId] || 0) + 1;
+    gameBallCounts = Object.entries(countMap).map(([playerId, count]) => ({ playerId, count }));
+  } catch { /* table may not exist */ }
+
+  return NextResponse.json({ ...filtered, gameBallCounts });
 }
 
 export async function DELETE(

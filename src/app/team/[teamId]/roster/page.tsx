@@ -33,6 +33,7 @@ interface Team {
   name: string;
   players: Player[];
   members: TeamMember[];
+  gameBallCounts?: { playerId: string; count: number }[];
 }
 
 export default function RosterPage() {
@@ -340,6 +341,49 @@ export default function RosterPage() {
                       </label>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Game Ball Tracker */}
+      {sortedPlayers.length > 0 && (() => {
+        const counts = new Map(
+          (team?.gameBallCounts || []).map((g) => [g.playerId, g.count]),
+        );
+        const playersWithBalls = sortedPlayers
+          .filter((p) => (counts.get(p.id) || 0) > 0)
+          .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
+        const totalBalls = playersWithBalls.reduce((sum, p) => sum + (counts.get(p.id) || 0), 0);
+        return (
+          <div className="mt-8">
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="text-lg font-bold text-gray-900">Game Ball Tracker</h2>
+              <span className="text-sm text-gray-500">
+                {totalBalls} game ball{totalBalls !== 1 ? "s" : ""} awarded
+              </span>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              {playersWithBalls.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-2">No game balls awarded yet</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                  {playersWithBalls.map((p) => {
+                    const count = counts.get(p.id) || 0;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between px-3 py-2 rounded-lg border border-yellow-200 bg-yellow-50"
+                      >
+                        <span className="text-sm text-gray-800 truncate">{p.name}</span>
+                        <span className="ml-2 flex-shrink-0 bg-yellow-200 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                          {count}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
