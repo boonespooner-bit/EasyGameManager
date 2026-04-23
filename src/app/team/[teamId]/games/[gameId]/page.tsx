@@ -11,9 +11,11 @@ import { INNINGS, POSITIONS } from "@/types";
 interface Assignment {
   playerId: string;
   playerName: string;
+  playerFirstName?: string;
+  jerseyNumber?: string | null;
   inning: number;
   position: FieldPosition;
-  player?: { name: string };
+  player?: { name: string; firstName?: string; jerseyNumber?: string | null };
 }
 
 interface GameData {
@@ -26,6 +28,9 @@ interface GameData {
     players: {
       id: string;
       name: string;
+      firstName?: string;
+      lastName?: string;
+      jerseyNumber?: string | null;
       battingOrder: number;
       isPoolPlayer?: boolean;
       ratings: { position: string; rating: number }[];
@@ -35,7 +40,7 @@ interface GameData {
     playerId: string;
     inning: number;
     position: string;
-    player: { name: string };
+    player: { name: string; firstName?: string; jerseyNumber?: string | null };
   }[];
   exclusions?: { playerId: string }[];
   poolPlayers?: { id: string; name: string }[];
@@ -54,7 +59,7 @@ export default function GamePlanPage() {
 
   const [game, setGame] = useState<GameData | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [battingOrder, setBattingOrder] = useState<{ playerId: string; playerName: string; order: number }[]>([]);
+  const [battingOrder, setBattingOrder] = useState<{ playerId: string; playerName: string; jerseyNumber?: string | null; order: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pitchingMode, setPitchingMode] = useState(false);
@@ -88,6 +93,8 @@ export default function GamePlanPage() {
         data.innings.map((i) => ({
           playerId: i.playerId,
           playerName: i.player.name,
+          playerFirstName: i.player.firstName || i.player.name.split(" ")[0],
+          jerseyNumber: i.player.jerseyNumber,
           inning: i.inning,
           position: i.position as FieldPosition,
         })),
@@ -112,6 +119,7 @@ export default function GamePlanPage() {
         .map((p) => ({
           playerId: p.id,
           playerName: p.isPoolPlayer ? `${p.name} (pool)` : p.name,
+          jerseyNumber: p.jerseyNumber,
           order: gameOrderMap.get(p.id) ?? p.battingOrder,
         }))
         .sort((a, b) => a.order - b.order)
@@ -168,7 +176,7 @@ export default function GamePlanPage() {
   };
 
   const handleBattingOrderUpdate = async (
-    newOrder: { playerId: string; playerName: string; order: number }[],
+    newOrder: { playerId: string; playerName: string; jerseyNumber?: string | null; order: number }[],
   ) => {
     setBattingOrder(newOrder);
     setSaving(true);
@@ -812,7 +820,7 @@ export default function GamePlanPage() {
         onUpdate={handleUpdate}
         onBattingOrderUpdate={handleBattingOrderUpdate}
         pitchingMode={pitchingMode}
-        allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name, ratings: p.ratings }))}
+        allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name, firstName: p.firstName || p.name.split(" ")[0], ratings: p.ratings }))}
         onPitcherChange={handlePitcherChange}
         onPositionChange={handlePositionChange}
         onPositionUnassign={handlePositionUnassign}

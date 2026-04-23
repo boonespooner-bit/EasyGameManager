@@ -14,6 +14,9 @@ interface PlayerRating {
 interface Player {
   id: string;
   name: string;
+  firstName: string;
+  lastName: string;
+  jerseyNumber: string | null;
   battingOrder: number;
   hasPitched: boolean;
   ratings: PlayerRating[];
@@ -194,7 +197,12 @@ export default function RosterPage() {
                           <span className="text-lg leading-none select-none">&#8801;</span>
                         </td>
                         <td className="px-4 py-3 text-sm font-bold text-gray-400">{player.battingOrder}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{player.name}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          {player.name}
+                          {player.jerseyNumber && (
+                            <span className="ml-1 text-xs text-gray-400">#{player.jerseyNumber}</span>
+                          )}
+                        </td>
                         {POSITIONS.map((pos) => {
                           const r = player.ratings.find((r) => r.position === pos);
                           const rating = r?.rating ?? 0;
@@ -429,7 +437,9 @@ function PlayerForm({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(player?.name || "");
+  const [firstName, setFirstName] = useState(player?.firstName || "");
+  const [lastName, setLastName] = useState(player?.lastName || "");
+  const [jerseyNumber, setJerseyNumber] = useState(player?.jerseyNumber || "");
   const [battingOrder, setBattingOrder] = useState(player?.battingOrder || nextBattingOrder);
   const [ratings, setRatings] = useState<Record<string, number>>(() => {
     const r: Record<string, number> = {};
@@ -441,7 +451,7 @@ function PlayerForm({
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!firstName.trim()) return;
     setSaving(true);
 
     const url = player
@@ -451,7 +461,7 @@ function PlayerForm({
     await fetch(url, {
       method: player ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, battingOrder, ratings }),
+      body: JSON.stringify({ firstName, lastName, jerseyNumber: jerseyNumber || null, battingOrder, ratings }),
     });
 
     setSaving(false);
@@ -460,16 +470,36 @@ function PlayerForm({
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-4 gap-4 mb-4">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Player Name</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">First Name</label>
           <input
             type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
             className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-            placeholder="Player name"
+            placeholder="First"
             autoFocus
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Last Name</label>
+          <input
+            type="text"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+            placeholder="Last"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Jersey #</label>
+          <input
+            type="text"
+            value={jerseyNumber}
+            onChange={(e) => setJerseyNumber(e.target.value)}
+            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+            placeholder="#"
           />
         </div>
         <div>

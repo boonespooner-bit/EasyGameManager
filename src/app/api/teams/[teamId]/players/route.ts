@@ -15,7 +15,7 @@ export async function GET(
   const players = await prisma.player.findMany({
     where: { teamId },
     orderBy: { battingOrder: "asc" },
-    select: { id: true, name: true, battingOrder: true, isPoolPlayer: true },
+    select: { id: true, name: true, firstName: true, lastName: true, jerseyNumber: true, battingOrder: true, isPoolPlayer: true },
   });
 
   return NextResponse.json(players.filter((p) => !p.isPoolPlayer));
@@ -37,11 +37,15 @@ export async function POST(
     return NextResponse.json({ error: "No permission" }, { status: 403 });
   }
 
-  const { name, battingOrder, ratings } = await req.json();
+  const { firstName, lastName, jerseyNumber, battingOrder, ratings } = await req.json();
+  const name = `${firstName} ${lastName}`.trim();
 
   const player = await prisma.player.create({
     data: {
       name,
+      firstName,
+      lastName,
+      jerseyNumber: jerseyNumber || null,
       battingOrder,
       teamId,
       ratings: {

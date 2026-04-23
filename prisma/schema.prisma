@@ -80,6 +80,9 @@ model TeamMember {
 model Player {
   id           String             @id @default(cuid())
   name         String
+  firstName    String             @default("")
+  lastName     String             @default("")
+  jerseyNumber String?
   teamId       String
   battingOrder Int
   isPoolPlayer Boolean            @default(false)

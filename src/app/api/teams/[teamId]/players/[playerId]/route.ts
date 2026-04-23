@@ -19,12 +19,20 @@ export async function PUT(
     return NextResponse.json({ error: "No permission" }, { status: 403 });
   }
 
-  const { name, battingOrder, ratings } = await req.json();
+  const { firstName, lastName, jerseyNumber, battingOrder, ratings } = await req.json();
+
+  const nameData: Record<string, unknown> = {};
+  if (firstName !== undefined) {
+    nameData.firstName = firstName;
+    nameData.lastName = lastName ?? "";
+    nameData.name = `${firstName} ${lastName ?? ""}`.trim();
+  }
+  if (jerseyNumber !== undefined) nameData.jerseyNumber = jerseyNumber || null;
 
   const player = await prisma.player.update({
     where: { id: playerId },
     data: {
-      ...(name !== undefined && { name }),
+      ...nameData,
       ...(battingOrder !== undefined && { battingOrder }),
     },
   });
