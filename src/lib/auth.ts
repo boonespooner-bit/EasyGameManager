@@ -23,9 +23,24 @@ export const authOptions: NextAuthOptions = {
           const existing = await prisma.user.findUnique({
             where: { email: credentials.email },
           });
-          if (existing) throw new Error("Account already exists. Please sign in.");
+
+          if (existing && existing.hashedPassword) {
+            throw new Error("Account already exists. Please sign in.");
+          }
 
           const hashed = await bcrypt.hash(credentials.password, 12);
+
+          if (existing && !existing.hashedPassword) {
+            const user = await prisma.user.update({
+              where: { id: existing.id },
+              data: {
+                hashedPassword: hashed,
+                name: credentials.name || existing.name,
+              },
+            });
+            return { id: user.id, email: user.email, name: user.name };
+          }
+
           const user = await prisma.user.create({
             data: {
               email: credentials.email,
