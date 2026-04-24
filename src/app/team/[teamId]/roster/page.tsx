@@ -356,6 +356,7 @@ export default function RosterPage() {
         const playersWithBalls = sortedPlayers
           .filter((p) => (counts.get(p.id) || 0) > 0)
           .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
+        const playersWithout = sortedPlayers.filter((p) => !counts.get(p.id));
         const totalBalls = playersWithBalls.reduce((sum, p) => sum + (counts.get(p.id) || 0), 0);
         return (
           <div className="mt-8">
@@ -364,26 +365,53 @@ export default function RosterPage() {
               <span className="text-sm text-gray-500">
                 {totalBalls} game ball{totalBalls !== 1 ? "s" : ""} awarded
               </span>
+              {playersWithout.length === 0 && sortedPlayers.length > 0 && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">
+                  Everyone has a game ball!
+                </span>
+              )}
             </div>
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              {playersWithBalls.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-2">No game balls awarded yet</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                  {playersWithBalls.map((p) => {
-                    const count = counts.get(p.id) || 0;
-                    return (
+              {playersWithout.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Needs a game ball ({playersWithout.length})
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {playersWithout.map((p) => (
                       <div
                         key={p.id}
-                        className="flex items-center justify-between px-3 py-2 rounded-lg border border-yellow-200 bg-yellow-50"
+                        className="px-3 py-2 rounded-lg border border-orange-100 bg-orange-50"
                       >
                         <span className="text-sm text-gray-800 truncate">{p.name}</span>
-                        <span className="ml-2 flex-shrink-0 bg-yellow-200 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                          {count}
-                        </span>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {playersWithBalls.length > 0 && (
+                <div>
+                  {playersWithout.length > 0 && <div className="border-t border-gray-100 mb-3" />}
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Has received ({playersWithBalls.length})
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {playersWithBalls.map((p) => {
+                      const count = counts.get(p.id) || 0;
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between px-3 py-2 rounded-lg border border-yellow-200 bg-yellow-50"
+                        >
+                          <span className="text-sm text-gray-800 truncate">{p.name}</span>
+                          <span className="ml-2 flex-shrink-0 bg-yellow-200 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                            {count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
