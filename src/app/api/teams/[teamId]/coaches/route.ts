@@ -76,3 +76,37 @@ export async function DELETE(
   await prisma.teamMember.delete({ where: { id: memberId } });
   return NextResponse.json({ success: true });
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ teamId: string }> },
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { teamId } = await params;
+  const userId = (session.user as { id: string }).id;
+  const member = await prisma.teamMember.findUnique({
+    where: { userId_teamId: { userId, teamId } },
+  });
+  if (!member || member.role !== "head_coach") {
+    return NextResponse.json({ error: "Only head coach can change roles" }, { status: 403 });
+  }
+
+  const { memberId, role } = await req.json();
+  const target = await prisma.teamMember.findUnique({ where: { id: memberId } });
+  if (!target || target.teamId !== teamId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
+  if (target.role === "head_coach") {
+    return NextResponse.json({ error: "Cannot change head coach role" }, { status: 400 });
+  }
+
+  const newRole = role === "viewer" ? "viewer" : "assistant_coach";
+  const updated = await prisma.teamMember.update({
+    where: { id: memberId },
+    data: { role: newRole },
+  });
+
+  return NextResponse.json(updated);
+}
