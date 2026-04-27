@@ -789,6 +789,38 @@ export default function BaseballField({
                 )}
               </div>
             )}
+            <div className="no-print mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-600 font-medium">Bench count:</span>
+              {(() => {
+                const allPlayerIds = new Set<string>();
+                const firstNames = new Map<string, string>();
+                for (const a of assignments) {
+                  allPlayerIds.add(a.playerId);
+                  if (!firstNames.has(a.playerId)) {
+                    firstNames.set(a.playerId, a.playerFirstName || a.playerName.split(" ")[0]);
+                  }
+                }
+                return Array.from(allPlayerIds)
+                  .map((id) => ({ id, name: firstNames.get(id) || "", count: benchCountMap[id] || 0 }))
+                  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+                  .map((p) => (
+                    <span
+                      key={p.id}
+                      className={`text-xs px-2 py-0.5 rounded border ${
+                        p.count === 0
+                          ? "bg-yellow-100 text-yellow-800 border-yellow-200"
+                          : p.count >= 3
+                            ? "bg-red-100 text-red-700 border-red-200 font-bold"
+                            : p.count === 2
+                              ? "bg-orange-100 text-orange-700 border-orange-200 font-medium"
+                              : "bg-gray-100 text-gray-700 border-gray-200"
+                      }`}
+                    >
+                      {p.name}: {p.count}
+                    </span>
+                  ));
+              })()}
+            </div>
             {previousGameBench && previousGameBench.players.length > 0 && (
               <div className="no-print mt-2 inline-block bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-900">
                 <div className="font-semibold text-amber-800">
