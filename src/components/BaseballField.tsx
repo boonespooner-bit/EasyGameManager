@@ -504,6 +504,31 @@ export default function BaseballField({
           </div>
         </div>
 
+        {/* Bench count summary */}
+        <div style={{ marginBottom: "8px" }}>
+          <div style={{ fontSize: "9px", display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
+            <span style={{ fontWeight: "bold", color: "#555" }}>Bench count:</span>
+            {(() => {
+              const allPlayerIds = new Set<string>();
+              const firstNames = new Map<string, string>();
+              for (const a of assignments) {
+                allPlayerIds.add(a.playerId);
+                if (!firstNames.has(a.playerId)) {
+                  firstNames.set(a.playerId, a.playerFirstName || a.playerName.split(" ")[0]);
+                }
+              }
+              return Array.from(allPlayerIds)
+                .map((id) => ({ id, name: firstNames.get(id) || "", count: benchCountMap[id] || 0 }))
+                .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+                .map((p) => (
+                  <span key={p.id} style={{ fontWeight: p.count >= 3 ? "bold" : "normal" }}>
+                    {p.name}: {p.count}
+                  </span>
+                ));
+            })()}
+          </div>
+        </div>
+
         {/* Batting Order - horizontal to save space */}
         <div>
           <div style={{ fontSize: "11px", fontWeight: "bold", marginBottom: "3px" }}>Batting Order</div>
