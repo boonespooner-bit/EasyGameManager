@@ -83,6 +83,8 @@ export default function GamePlanPage() {
     POSITIONS.forEach((p) => (r[p] = 5));
     return r;
   });
+  const [suggestedAssignments, setSuggestedAssignments] = useState<Assignment[] | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -519,6 +521,55 @@ export default function GamePlanPage() {
     setRosterUpdating(null);
   };
 
+  const handleSuggestPositions = async () => {
+    setSuggesting(true);
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}/suggest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const mapped: Assignment[] = data.suggestions.map((s: { playerId: string; playerName: string; inning: number; position: string }) => {
+        const player = game?.team.players.find((p) => p.id === s.playerId);
+        return {
+          playerId: s.playerId,
+          playerName: s.playerName,
+          playerFirstName: player?.firstName || s.playerName.split(" ")[0],
+          jerseyNumber: player?.jerseyNumber,
+          inning: s.inning,
+          position: s.position as FieldPosition,
+        };
+      });
+      setSuggestedAssignments(mapped);
+    }
+    setSuggesting(false);
+  };
+
+  const handleAcceptSuggestions = async () => {
+    if (!suggestedAssignments) return;
+    setAssignments(suggestedAssignments);
+    setSuggestedAssignments(null);
+    setHeldPositions([]);
+
+    setSaving(true);
+    await Promise.all([
+      fetch(`/api/teams/${teamId}/games/${gameId}/assignments`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignments: suggestedAssignments.map((a) => ({
+            playerId: a.playerId,
+            inning: a.inning,
+            position: a.position,
+          })),
+        }),
+      }),
+      saveHeldPositions([]),
+    ]);
+    setSaving(false);
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
@@ -580,6 +631,15 @@ export default function GamePlanPage() {
               }`}
             >
               Manage Roster
+            </button>
+          )}
+          {!game.isLocked && (
+            <button
+              onClick={handleSuggestPositions}
+              disabled={suggesting}
+              className="text-sm px-3 py-1.5 rounded-lg font-medium bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors disabled:opacity-50"
+            >
+              {suggesting ? "Analyzing..." : "Suggest Positions"}
             </button>
           )}
           {!game.isLocked && (
@@ -805,6 +865,80 @@ export default function GamePlanPage() {
               >
                 Confirm Swap
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Suggestion Preview Overlay */}
+      {suggestedAssignments && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Suggested Lineup</h3>
+                <p className="text-sm text-gray-500">Based on coaching patterns from previous games</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSuggestedAssignments(null)}
+                  className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={handleAcceptSuggestions}
+                  className="px-4 py-2 text-sm rounded-lg bg-purple-600 text-white hover:bg-purple-500 transition-colors font-medium"
+                >
+                  Accept Suggestions
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left p-2 border border-gray-200 font-semibold text-gray-600 w-16">Pos</th>
+                    {INNINGS.map((inn) => (
+                      <th key={inn} className="text-center p-2 border border-gray-200 font-semibold text-gray-600">
+                        Inn {inn}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"].map((pos) => (
+                    <tr key={pos} className={pos === "P" || pos === "C" ? "bg-amber-50/50" : ""}>
+                      <td className="p-2 border border-gray-200 font-semibold text-gray-700">{pos}</td>
+                      {INNINGS.map((inn) => {
+                        const a = suggestedAssignments.find(
+                          (s) => s.inning === inn && s.position === pos,
+                        );
+                        return (
+                          <td key={inn} className="p-2 border border-gray-200 text-center text-gray-800">
+                            {a?.playerFirstName || a?.playerName?.split(" ")[0] || "—"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-50/50">
+                    <td className="p-2 border border-gray-200 font-semibold text-gray-500">Bench</td>
+                    {INNINGS.map((inn) => {
+                      const benched = suggestedAssignments.filter(
+                        (s) => s.inning === inn && s.position === "BENCH",
+                      );
+                      return (
+                        <td key={inn} className="p-2 border border-gray-200 text-center text-gray-500 text-[10px]">
+                          {benched.length > 0
+                            ? benched.map((b) => b.playerFirstName || b.playerName.split(" ")[0]).join(", ")
+                            : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
