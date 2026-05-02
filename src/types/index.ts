@@ -34,3 +34,10 @@ export interface SeasonHistory {
   hasPitched: boolean;
   startedOnBenchLastGame: boolean;
 }
+
+export interface HistoricalFrequency {
+  playerId: string;
+  position: string;
+  inning: number;
+  count: number;
+}

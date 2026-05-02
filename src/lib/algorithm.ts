@@ -1,4 +1,4 @@
-import { POSITIONS, INNINGS, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position } from "@/types";
+import { POSITIONS, INNINGS, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position, type HistoricalFrequency } from "@/types";
 
 const POSITION_PRIORITY: Position[] = ["SS", "3B", "2B", "1B", "CF", "LF", "RF"];
 const INFIELD_POSITIONS: Position[] = ["3B", "SS", "2B", "1B"];
@@ -15,12 +15,24 @@ export function generateGamePlan(
   seasonHistory: SeasonHistory[],
   lockedPitchers?: { playerId: string; inning: number }[],
   lockedPositions?: { playerId: string; inning: number; position: string }[],
+  historicalFrequency?: HistoricalFrequency[],
 ): GameAssignment[] {
   if (players.length === 0) {
     return [];
   }
 
   const historyMap = new Map(seasonHistory.map((h) => [h.playerId, h]));
+
+  // Build frequency lookup: playerId -> position -> inning -> count
+  const freqMap = new Map<string, Map<string, Map<number, number>>>();
+  if (historicalFrequency) {
+    for (const f of historicalFrequency) {
+      if (!freqMap.has(f.playerId)) freqMap.set(f.playerId, new Map());
+      const posMap = freqMap.get(f.playerId)!;
+      if (!posMap.has(f.position)) posMap.set(f.position, new Map());
+      posMap.get(f.position)!.set(f.inning, f.count);
+    }
+  }
   const numPlayers = players.length;
   const numPositions = POSITIONS.length; // 9
 
@@ -133,7 +145,7 @@ export function generateGamePlan(
   // Phase 1: Use locked pitchers if any, otherwise auto-plan
   const pitchingSchedule = allLockedPitchers.length > 0
     ? allLockedPitchers
-    : planPitchingSchedule(players, activeByInning, historyMap);
+    : planPitchingSchedule(players, activeByInning, historyMap, freqMap);
 
   // Extract locked catcher positions
   const lockedCatcherPositions = lockedPositions
@@ -142,7 +154,7 @@ export function generateGamePlan(
 
   // Phase 2: Pre-plan catching schedule across all innings
   const catchingSchedule = planCatchingSchedule(
-    players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions,
+    players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions, freqMap,
   );
 
   // Phase 3: Assign remaining positions inning by inning
@@ -227,8 +239,23 @@ export function generateGamePlan(
 
         const seasonCount = history?.positionCounts[position] ?? 0;
         const gameCount = gamePositionCounts[player.id][position] ?? 0;
-        score -= seasonCount * 0.3;
-        score -= gameCount * 3;
+
+        if (freqMap.size > 0) {
+          // Suggest mode: boost based on how often the coach placed this player
+          // at this position in this inning historically
+          const inningFreq = freqMap.get(player.id)?.get(position)?.get(inning) ?? 0;
+          const totalPosFreq = freqMap.get(player.id)?.get(position);
+          const anyInningFreq = totalPosFreq
+            ? Array.from(totalPosFreq.values()).reduce((s, v) => s + v, 0)
+            : 0;
+          score += inningFreq * 3.0;
+          score += anyInningFreq * 0.5;
+          score -= gameCount * 3;
+        } else {
+          // Normal mode: penalize repeats to promote variety
+          score -= seasonCount * 0.3;
+          score -= gameCount * 3;
+        }
 
         if (importance < 1 && rating < 5) {
           score += 1;
@@ -424,6 +451,7 @@ function planPitchingSchedule(
   players: PlayerWithRatings[],
   activeByInning: Map<number, PlayerWithRatings[]>,
   historyMap: Map<string, SeasonHistory>,
+  freqMap: Map<string, Map<string, Map<number, number>>> = new Map(),
 ): { playerId: string; inning: number }[] {
   const schedule: { playerId: string; inning: number }[] = [];
   const innings = [...INNINGS]; // [1,2,3,4,5,6]
@@ -436,8 +464,15 @@ function planPitchingSchedule(
       const rating = p.ratings.find((r) => r.position === "P")?.rating ?? 1;
       const history = historyMap.get(p.id);
       let score = rating;
-      // Bonus for players who haven't pitched this season
-      if (history && !history.hasPitched) score += 2;
+      if (freqMap.size > 0) {
+        const pitchFreq = p.id ? freqMap.get(p.id)?.get("P") : undefined;
+        const totalPitchInnings = pitchFreq
+          ? Array.from(pitchFreq.values()).reduce((s, v) => s + v, 0)
+          : 0;
+        score += totalPitchInnings * 1.5;
+      } else {
+        if (history && !history.hasPitched) score += 2;
+      }
       return { player: p, score };
     }).sort((a, b) => b.score - a.score);
 
@@ -447,12 +482,24 @@ function planPitchingSchedule(
     const inning = innings[i];
     const nextInning = i + 1 < innings.length ? innings[i + 1] : null;
 
+    // In suggest mode, re-rank candidates for these specific innings
+    const candidates = freqMap.size > 0
+      ? [...pitchScores].sort((a, b) => {
+          const aFreq = (freqMap.get(a.player.id)?.get("P")?.get(inning) ?? 0)
+            + (nextInning !== null ? (freqMap.get(a.player.id)?.get("P")?.get(nextInning) ?? 0) : 0);
+          const bFreq = (freqMap.get(b.player.id)?.get("P")?.get(inning) ?? 0)
+            + (nextInning !== null ? (freqMap.get(b.player.id)?.get("P")?.get(nextInning) ?? 0) : 0);
+          if (bFreq !== aFreq) return bFreq - aFreq;
+          return b.score - a.score;
+        })
+      : pitchScores;
+
     // Find best available pitcher who is active in these innings
     let assigned = false;
 
     // Try to assign a 2-inning block first
     if (nextInning !== null) {
-      for (const { player } of pitchScores) {
+      for (const { player } of candidates) {
         if (usedPitchers.has(player.id)) continue;
         const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);
         const activeInNext = (activeByInning.get(nextInning) || []).some((p) => p.id === player.id);
@@ -469,7 +516,7 @@ function planPitchingSchedule(
 
     // Fall back to 1-inning assignment
     if (!assigned) {
-      for (const { player } of pitchScores) {
+      for (const { player } of candidates) {
         if (usedPitchers.has(player.id)) continue;
         const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);
         if (activeInCurrent) {
@@ -515,6 +562,7 @@ function planCatchingSchedule(
   pitchingSchedule: { playerId: string; inning: number }[],
   historyMap: Map<string, SeasonHistory>,
   lockedCatchers: { playerId: string; inning: number }[] = [],
+  freqMap: Map<string, Map<string, Map<number, number>>> = new Map(),
 ): { playerId: string; inning: number }[] {
   const schedule: { playerId: string; inning: number }[] = [];
   const innings = [...INNINGS];
@@ -538,8 +586,18 @@ function planCatchingSchedule(
     .map((p) => {
       const rating = p.ratings.find((r) => r.position === "C")?.rating ?? 1;
       const history = historyMap.get(p.id);
-      const seasonCount = history?.positionCounts["C"] ?? 0;
-      return { player: p, score: rating - seasonCount * 0.3 };
+      let score = rating;
+      if (freqMap.size > 0) {
+        const catchFreq = freqMap.get(p.id)?.get("C");
+        const totalCatchInnings = catchFreq
+          ? Array.from(catchFreq.values()).reduce((s, v) => s + v, 0)
+          : 0;
+        score += totalCatchInnings * 1.5;
+      } else {
+        const seasonCount = history?.positionCounts["C"] ?? 0;
+        score -= seasonCount * 0.3;
+      }
+      return { player: p, score };
     }).sort((a, b) => b.score - a.score);
 
   let i = 0;
@@ -555,11 +613,23 @@ function planCatchingSchedule(
     const nextInning = i + 1 < innings.length ? innings[i + 1] : null;
     const nextIsLocked = nextInning !== null && lockedCatcherInnings.has(nextInning);
 
+    // In suggest mode, re-rank candidates for these specific innings
+    const candidates = freqMap.size > 0
+      ? [...catchScores].sort((a, b) => {
+          const aFreq = (freqMap.get(a.player.id)?.get("C")?.get(inning) ?? 0)
+            + (nextInning !== null && !nextIsLocked ? (freqMap.get(a.player.id)?.get("C")?.get(nextInning) ?? 0) : 0);
+          const bFreq = (freqMap.get(b.player.id)?.get("C")?.get(inning) ?? 0)
+            + (nextInning !== null && !nextIsLocked ? (freqMap.get(b.player.id)?.get("C")?.get(nextInning) ?? 0) : 0);
+          if (bFreq !== aFreq) return bFreq - aFreq;
+          return b.score - a.score;
+        })
+      : catchScores;
+
     let assigned = false;
 
     // Try 2 consecutive innings first (preferred), only if next isn't locked
     if (nextInning !== null && !nextIsLocked) {
-      for (const { player } of catchScores) {
+      for (const { player } of candidates) {
         if (usedCatchers.has(player.id)) continue;
         if (pitcherByInning.get(inning) === player.id) continue;
         if (pitcherByInning.get(nextInning) === player.id) continue;
@@ -578,7 +648,7 @@ function planCatchingSchedule(
 
     // Fall back to 1-inning assignment
     if (!assigned) {
-      for (const { player } of catchScores) {
+      for (const { player } of candidates) {
         if (usedCatchers.has(player.id)) continue;
         if (pitcherByInning.get(inning) === player.id) continue;
         const activeInCurrent = (activeByInning.get(inning) || []).some((p) => p.id === player.id);

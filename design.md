@@ -120,14 +120,33 @@ Positions are not filled in a fixed order. Instead, for each inning, positions a
 
 ### Suggest Positions
 
-The "Suggest Positions" feature generates a recommended lineup based on historical coaching patterns from all previous locked games.
+The "Suggest Positions" feature generates a recommended lineup based on historical coaching patterns from all previous locked games. Unlike regular generation (which promotes variety), suggestions mirror the coach's actual historical decisions.
 
 **How it works:**
 
-1. The suggest endpoint (`POST /api/teams/[teamId]/games/[gameId]/suggest`) queries all locked games to build season history
-2. It gathers the current game's available players (respecting exclusions and pool players)
-3. It calls `generateGamePlan()` with full season history but no locked pitchers or locked positions — generating a clean, history-informed plan
+1. The suggest endpoint (`POST /api/teams/[teamId]/games/[gameId]/suggest`) queries all locked games
+2. It builds **per-player, per-position, per-inning frequency maps** — e.g., "Teddy caught in inning 1 across 5 games"
+3. It passes this `historicalFrequency` data to `generateGamePlan()` alongside season history
 4. Suggestions are returned without saving to the database
+
+**Suggest mode scoring (field positions):**
+
+When `historicalFrequency` is provided, the scoring formula changes:
+
+```
+score = rating × inningImportance
+      + inningFreq × 3.0        (strong boost for this player at this position in this inning)
+      + anyInningFreq × 0.5     (mild boost for this player at this position across all innings)
+      - gameCount × 3           (still avoid repeats within this game)
+```
+
+This replaces the normal mode's `-seasonCount × 0.3` penalty with positive boosts from historical frequency, so players are suggested for positions where the coach has consistently placed them.
+
+**Suggest mode pitching/catching:**
+
+- Pitchers are ranked by total historical pitching frequency (`+totalPitchInnings × 1.5`) instead of the normal "hasn't pitched" bonus
+- For each inning pair, candidates are re-sorted by their specific inning frequency — if Teddy pitched innings 1-2 most often, he'll be suggested there
+- Catching uses the same approach: historical catching frequency boosts (`+totalCatchInnings × 1.5`) replace the season penalty, with per-inning re-ranking
 
 **UI flow:**
 
@@ -135,8 +154,6 @@ The "Suggest Positions" feature generates a recommended lineup based on historic
 2. A preview overlay shows the suggested lineup in a positions-by-innings grid with bench assignments
 3. "Accept" applies the suggestions to the game and clears all held positions
 4. "Dismiss" closes the overlay with no changes
-
-The algorithm uses the same scoring formula as regular generation, meaning historical position frequencies from `seasonHistory.positionCounts` influence which players get assigned where. Players who have played a position more often across the season receive a slight penalty for that position (`-seasonCount × 0.3`), promoting rotation and variety.
 
 ## UI Architecture
 
