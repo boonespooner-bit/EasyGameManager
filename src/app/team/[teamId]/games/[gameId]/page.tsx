@@ -85,6 +85,9 @@ export default function GamePlanPage() {
   });
   const [suggestedAssignments, setSuggestedAssignments] = useState<Assignment[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [showCopyPicker, setShowCopyPicker] = useState(false);
+  const [pastGames, setPastGames] = useState<{ id: string; opponent: string; date: string; isLocked: boolean }[]>([]);
+  const [copying, setCopying] = useState(false);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -570,6 +573,78 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
+  const handleOpenCopyPicker = async () => {
+    setShowCopyPicker(true);
+    const res = await fetch(`/api/teams/${teamId}/games`);
+    if (res.ok) {
+      const data = await res.json();
+      const others = data
+        .filter((g: { id: string }) => g.id !== gameId)
+        .map((g: { id: string; opponent: string; date: string; isLocked: boolean }) => ({
+          id: g.id,
+          opponent: g.opponent,
+          date: g.date,
+          isLocked: g.isLocked,
+        }));
+      setPastGames(others);
+    }
+  };
+
+  const handleCopyGameplan = async (sourceGameId: string) => {
+    setCopying(true);
+    const res = await fetch(`/api/teams/${teamId}/games/${sourceGameId}`);
+    if (!res.ok) {
+      setCopying(false);
+      return;
+    }
+    const sourceGame = await res.json();
+    const sourceAssignments = sourceGame.innings as {
+      playerId: string;
+      inning: number;
+      position: string;
+      player: { name: string; firstName?: string; jerseyNumber?: string | null };
+    }[];
+
+    // Only copy assignments for players that exist in the current game
+    const currentPlayerIds = new Set(game?.team.players.map((p) => p.id) || []);
+    const validAssignments = sourceAssignments.filter((a) => currentPlayerIds.has(a.playerId));
+
+    const mapped: Assignment[] = validAssignments.map((a) => {
+      const player = game?.team.players.find((p) => p.id === a.playerId);
+      return {
+        playerId: a.playerId,
+        playerName: a.player.name,
+        playerFirstName: player?.firstName || a.player.firstName || a.player.name.split(" ")[0],
+        jerseyNumber: player?.jerseyNumber ?? a.player.jerseyNumber,
+        inning: a.inning,
+        position: a.position as FieldPosition,
+      };
+    });
+
+    setAssignments(mapped);
+    setHeldPositions([]);
+    setShowCopyPicker(false);
+
+    setSaving(true);
+    await Promise.all([
+      fetch(`/api/teams/${teamId}/games/${gameId}/assignments`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignments: validAssignments.map((a) => ({
+            playerId: a.playerId,
+            inning: a.inning,
+            position: a.position,
+          })),
+        }),
+      }),
+      saveHeldPositions([]),
+    ]);
+    setSaving(false);
+    setCopying(false);
+    await fetchGame();
+  };
+
   if (loading || !game) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
@@ -631,6 +706,15 @@ export default function GamePlanPage() {
               }`}
             >
               Manage Roster
+            </button>
+          )}
+          {!game.isLocked && (
+            <button
+              onClick={handleOpenCopyPicker}
+              disabled={copying}
+              className="text-sm px-3 py-1.5 rounded-lg font-medium bg-cyan-100 text-cyan-700 hover:bg-cyan-200 transition-colors disabled:opacity-50"
+            >
+              {copying ? "Copying..." : "Copy Gameplan"}
             </button>
           )}
           {!game.isLocked && (
@@ -865,6 +949,51 @@ export default function GamePlanPage() {
               >
                 Confirm Swap
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Gameplan Picker */}
+      {showCopyPicker && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">Copy Gameplan From...</h3>
+              <button
+                onClick={() => setShowCopyPicker(false)}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2 flex-1">
+              {pastGames.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-8">No other games found.</p>
+              ) : (
+                <div className="space-y-1">
+                  {pastGames.map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => handleCopyGameplan(g.id)}
+                      disabled={copying}
+                      className="w-full text-left px-4 py-3 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-between disabled:opacity-50"
+                    >
+                      <div>
+                        <span className="font-medium text-gray-900">vs {g.opponent}</span>
+                        <span className="text-sm text-gray-500 ml-2">
+                          {new Date(g.date).toLocaleDateString()}
+                        </span>
+                      </div>
+                      {g.isLocked && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                          Locked
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
