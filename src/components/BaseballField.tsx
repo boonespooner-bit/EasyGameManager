@@ -134,6 +134,28 @@ export default function BaseballField({
     return counts;
   }, [assignments]);
 
+  // Detect players benched in consecutive innings (e.g., innings 2 and 3)
+  const consecutiveBenchSet = useMemo(() => {
+    const benchByInning = new Map<number, Set<string>>();
+    for (const a of assignments) {
+      if (a.position === "BENCH") {
+        if (!benchByInning.has(a.inning)) benchByInning.set(a.inning, new Set());
+        benchByInning.get(a.inning)!.add(a.playerId);
+      }
+    }
+    const result = new Set<string>();
+    for (let i = 1; i < INNINGS.length; i++) {
+      const prev = benchByInning.get(INNINGS[i - 1]);
+      const curr = benchByInning.get(INNINGS[i]);
+      if (prev && curr) {
+        for (const id of curr) {
+          if (prev.has(id)) result.add(id);
+        }
+      }
+    }
+    return result;
+  }, [assignments]);
+
   // For each not-sat player, suggest the best inning + bench player to swap with.
   // Prefers swapping in a benched player who has sat the most so far (to balance
   // bench distribution) and who can play the position well.
@@ -235,14 +257,12 @@ export default function BaseballField({
     return map;
   })();
 
-  // Print-view bench color map (name-based, inline styles for print)
+  // Print-view bench color map (playerId-based, inline styles for print)
   const printBenchColors = (() => {
     const benchCounts: Record<string, number> = {};
-    const nameMap: Record<string, string> = {};
     for (const a of assignments) {
       if (a.position === "BENCH") {
         benchCounts[a.playerId] = (benchCounts[a.playerId] || 0) + 1;
-        nameMap[a.playerName] = a.playerId;
       }
     }
     const colors = ["#e9d5ff", "#ccfbf1", "#ffedd5", "#fce7f3", "#cffafe", "#ecfccb"];
@@ -254,11 +274,7 @@ export default function BaseballField({
         colorIdx++;
       }
     }
-    const nameColorMap: Record<string, string> = {};
-    for (const [name, id] of Object.entries(nameMap)) {
-      if (map[id]) nameColorMap[name] = map[id];
-    }
-    return nameColorMap;
+    return map;
   })();
 
   const getPlayersAtPosition = (position: string) => {
@@ -369,7 +385,7 @@ export default function BaseballField({
       inning,
       players: assignments
         .filter((a) => a.position === "BENCH" && a.inning === inning)
-        .map((a) => a.playerFirstName || a.playerName.split(" ")[0]),
+        .map((a) => ({ name: a.playerFirstName || a.playerName.split(" ")[0], playerId: a.playerId })),
     }));
   };
 
@@ -486,8 +502,9 @@ export default function BaseballField({
                 fontSize: "8px",
               }}>
                 <div style={{ fontWeight: "bold", color: "#666", marginBottom: "2px", fontSize: "8px" }}>Inn {inning}</div>
-                {players.map((name, i) => {
-                  const bgColor = printBenchColors[name];
+                {players.map((p, i) => {
+                  const isConsecutive = consecutiveBenchSet.has(p.playerId);
+                  const bgColor = isConsecutive ? "#fecaca" : printBenchColors[p.playerId];
                   return (
                     <div key={i} style={{
                       whiteSpace: "nowrap",
@@ -496,7 +513,10 @@ export default function BaseballField({
                       backgroundColor: bgColor || "transparent",
                       borderRadius: bgColor ? "2px" : undefined,
                       padding: bgColor ? "0 2px" : undefined,
-                    }}>{name}</div>
+                      fontWeight: isConsecutive ? "bold" : undefined,
+                      color: isConsecutive ? "#991b1b" : undefined,
+                      border: isConsecutive ? "1px solid #f87171" : undefined,
+                    }}>{p.name}</div>
                   );
                 })}
               </div>
@@ -769,15 +789,18 @@ export default function BaseballField({
                         (h) => h.position === "BENCH" && h.inning === inning && h.playerId === p.playerId,
                       );
                       const benchColor = benchColorMap[p.playerId];
+                      const isConsecutive = consecutiveBenchSet.has(p.playerId);
                       return (
                         <div
                           key={p.playerId}
                           className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing ${
-                            isPlayerHeld
-                              ? "bg-amber-50 border-amber-300"
-                              : benchColor
-                                ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
-                                : "bg-white"
+                            isConsecutive
+                              ? "bg-red-100 border-red-400 text-red-800 font-bold animate-pulse"
+                              : isPlayerHeld
+                                ? "bg-amber-50 border-amber-300"
+                                : benchColor
+                                  ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
+                                  : "bg-white"
                           }`}
                           draggable={!isLocked}
                           onDragStart={() => handleDragStart("BENCH", inning)}
