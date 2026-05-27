@@ -129,6 +129,12 @@ export default function RosterPage() {
           >
             View Games
           </Link>
+          <Link
+            href={`/team/${teamId}/stats`}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-500 transition-colors text-sm"
+          >
+            Stats
+          </Link>
           {team.players.length < 12 && (
             <button
               onClick={() => setShowAddPlayer(true)}
