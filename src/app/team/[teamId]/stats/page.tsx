@@ -77,10 +77,16 @@ export default function StatsPage() {
         <div className="flex gap-3">
           <Link
             href={`/team/${teamId}/roster`}
-            className="text-sm text-green-700 hover:underline self-center"
+            className="no-print text-sm text-green-700 hover:underline self-center"
           >
             &larr; Back to Roster
           </Link>
+          <button
+            onClick={() => window.print()}
+            className="no-print text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+          >
+            Print Stats
+          </button>
         </div>
       </div>
 
@@ -101,7 +107,7 @@ export default function StatsPage() {
             const benchPct = pct(s.bench, s.totalInnings);
 
             return (
-              <div key={player.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+              <div key={player.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm" style={{ breakInside: "avoid" }}>
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">
@@ -131,7 +137,7 @@ export default function StatsPage() {
                         {infieldPct > 0 && (
                           <div
                             className="bg-blue-500 text-white text-xs flex items-center justify-center"
-                            style={{ width: `${infieldPct}%` }}
+                            style={{ width: `${infieldPct}%`, backgroundColor: "#3b82f6", color: "#fff" }}
                             title={`Infield: ${s.infield} innings`}
                           >
                             {infieldPct >= 8 ? `${infieldPct}%` : ""}
@@ -140,7 +146,7 @@ export default function StatsPage() {
                         {outfieldPct > 0 && (
                           <div
                             className="bg-green-500 text-white text-xs flex items-center justify-center"
-                            style={{ width: `${outfieldPct}%` }}
+                            style={{ width: `${outfieldPct}%`, backgroundColor: "#22c55e", color: "#fff" }}
                             title={`Outfield: ${s.outfield} innings`}
                           >
                             {outfieldPct >= 8 ? `${outfieldPct}%` : ""}
@@ -149,7 +155,7 @@ export default function StatsPage() {
                         {batteryPct > 0 && (
                           <div
                             className="bg-amber-500 text-white text-xs flex items-center justify-center"
-                            style={{ width: `${batteryPct}%` }}
+                            style={{ width: `${batteryPct}%`, backgroundColor: "#f59e0b", color: "#fff" }}
                             title={`Pitcher/Catcher: ${s.pitcher + s.catcher} innings`}
                           >
                             {batteryPct >= 8 ? `${batteryPct}%` : ""}
@@ -160,15 +166,15 @@ export default function StatsPage() {
                   </div>
                   <div className="flex gap-4 mt-2 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="w-3 h-3 bg-blue-500 rounded-sm" />
+                      <span className="w-3 h-3 bg-blue-500 rounded-sm" style={{ backgroundColor: "#3b82f6" }} />
                       Infield: <span className="font-semibold">{infieldPct}%</span> ({s.infield})
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="w-3 h-3 bg-green-500 rounded-sm" />
+                      <span className="w-3 h-3 bg-green-500 rounded-sm" style={{ backgroundColor: "#22c55e" }} />
                       Outfield: <span className="font-semibold">{outfieldPct}%</span> ({s.outfield})
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="w-3 h-3 bg-amber-500 rounded-sm" />
+                      <span className="w-3 h-3 bg-amber-500 rounded-sm" style={{ backgroundColor: "#f59e0b" }} />
                       P/C: <span className="font-semibold">{batteryPct}%</span> ({s.pitcher + s.catcher})
                     </span>
                     <span className="flex items-center gap-1 text-gray-500 ml-auto">
@@ -186,6 +192,7 @@ export default function StatsPage() {
                       const isInfield = (INFIELD as readonly string[]).includes(pos);
                       const isOutfield = (OUTFIELD as readonly string[]).includes(pos);
                       const isBattery = (BATTERY as readonly string[]).includes(pos);
+                      const neverPlayed = count === 0;
                       const accent = isInfield
                         ? "bg-blue-50 border-blue-200 text-blue-700"
                         : isOutfield
@@ -193,7 +200,15 @@ export default function StatsPage() {
                           : isBattery
                             ? "bg-amber-50 border-amber-200 text-amber-700"
                             : "bg-gray-50 border-gray-200 text-gray-600";
-                      const neverPlayed = count === 0;
+                      const printStyle = neverPlayed
+                        ? { backgroundColor: "#fef2f2", borderColor: "#fecaca", color: "#f87171" }
+                        : isInfield
+                          ? { backgroundColor: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }
+                          : isOutfield
+                            ? { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0", color: "#15803d" }
+                            : isBattery
+                              ? { backgroundColor: "#fffbeb", borderColor: "#fde68a", color: "#b45309" }
+                              : { backgroundColor: "#f9fafb", borderColor: "#e5e7eb", color: "#4b5563" };
                       return (
                         <div
                           key={pos}
@@ -202,6 +217,7 @@ export default function StatsPage() {
                               ? "bg-red-50 border-red-200 text-red-400"
                               : accent
                           }`}
+                          style={printStyle}
                           title={neverPlayed ? `Never played ${pos}` : `${count} innings at ${pos}`}
                         >
                           <div className="text-[10px] font-semibold uppercase tracking-wide">{pos}</div>
