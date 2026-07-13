@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { POSITIONS, INNINGS, type FieldPosition } from "@/types";
+import { INNINGS, activePositionsFor, type FieldPosition } from "@/types";
 
 interface Assignment {
   playerId: string;
@@ -47,6 +47,9 @@ interface Props {
   onGameBallUpdate?: (playerId: string, reason: string, id?: string) => void;
   onGameBallRemove?: (id: string) => void;
   previousGameBench?: { date: string; opponent: string; players: string[] } | null;
+  sandlotRules?: boolean;
+  extraOutfielder?: boolean;
+  disabledPositions?: string[];
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -56,9 +59,11 @@ const POSITION_COORDS: Record<string, { x: number; y: number }> = {
   "2B": { x: 62, y: 42 },
   SS: { x: 38, y: 42 },
   "3B": { x: 28, y: 55 },
-  LF: { x: 18, y: 25 },
+  LF: { x: 15, y: 22 },
   CF: { x: 50, y: 15 },
-  RF: { x: 82, y: 25 },
+  RF: { x: 85, y: 22 },
+  LCF: { x: 35, y: 15 },
+  RCF: { x: 65, y: 15 },
 };
 
 export default function BaseballField({
@@ -83,7 +88,15 @@ export default function BaseballField({
   onGameBallUpdate,
   onGameBallRemove,
   previousGameBench,
+  extraOutfielder = false,
+  disabledPositions = [],
 }: Props) {
+  // Positions rendered on the field (base set — includes disabled ones as greyed out)
+  const shownPositions = useMemo(
+    () => activePositionsFor(extraOutfielder, []),
+    [extraOutfielder],
+  );
+  const disabledSet = useMemo(() => new Set(disabledPositions), [disabledPositions]);
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [battingDragIndex, setBattingDragIndex] = useState<number | null>(null);
@@ -404,9 +417,11 @@ export default function BaseballField({
     "2B": { x: 63, y: 40 },
     SS: { x: 37, y: 40 },
     "3B": { x: 27, y: 53 },
-    LF: { x: 16, y: 22 },
+    LF: { x: 14, y: 20 },
     CF: { x: 50, y: 12 },
-    RF: { x: 84, y: 22 },
+    RF: { x: 86, y: 20 },
+    LCF: { x: 34, y: 12 },
+    RCF: { x: 66, y: 12 },
   };
 
   return (
@@ -446,8 +461,9 @@ export default function BaseballField({
           </svg>
 
           {/* Position boxes */}
-          {POSITIONS.map((pos) => {
+          {shownPositions.map((pos) => {
             const coord = PRINT_COORDS[pos];
+            const isDisabled = disabledSet.has(pos);
             const players = getPlayersForPrint(pos);
             return (
               <div
@@ -457,16 +473,17 @@ export default function BaseballField({
                   left: `${coord.x}%`,
                   top: `${coord.y}%`,
                   transform: "translate(-50%, -50%)",
-                  border: "1px solid #333",
+                  border: isDisabled ? "1px dashed #999" : "1px solid #333",
                   borderRadius: "3px",
-                  backgroundColor: "#fff",
+                  backgroundColor: isDisabled ? "#f3f4f6" : "#fff",
                   minWidth: "70px",
                   fontSize: "8px",
                   lineHeight: "1.3",
+                  opacity: isDisabled ? 0.5 : 1,
                 }}
               >
                 <div style={{
-                  backgroundColor: "#333",
+                  backgroundColor: isDisabled ? "#9ca3af" : "#333",
                   color: "#fff",
                   textAlign: "center",
                   fontWeight: "bold",
@@ -477,12 +494,16 @@ export default function BaseballField({
                   {pos}
                 </div>
                 <div style={{ padding: "1px 3px" }}>
-                  {players.map((name, i) => (
-                    <div key={i} style={{ display: "flex", gap: "3px", padding: "0.5px 0" }}>
-                      <span style={{ fontWeight: "bold", color: "#888", width: "10px", textAlign: "right" }}>{i + 1}.</span>
-                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
-                    </div>
-                  ))}
+                  {isDisabled ? (
+                    <div style={{ textAlign: "center", color: "#6b7280", fontStyle: "italic", padding: "2px 0" }}>disabled</div>
+                  ) : (
+                    players.map((name, i) => (
+                      <div key={i} style={{ display: "flex", gap: "3px", padding: "0.5px 0" }}>
+                        <span style={{ fontWeight: "bold", color: "#888", width: "10px", textAlign: "right" }}>{i + 1}.</span>
+                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             );
@@ -729,10 +750,11 @@ export default function BaseballField({
             </svg>
 
             {/* Position boxes */}
-            {POSITIONS.map((pos) => {
+            {shownPositions.map((pos) => {
               const coord = POSITION_COORDS[pos];
               const players = getPlayersAtPosition(pos);
               const isPitcher = pos === "P" && pitchingMode;
+              const isDisabled = disabledSet.has(pos);
               const heldInningsForPos = heldPositions
                 ? new Set(heldPositions.filter((h) => h.position === pos).map((h) => h.inning))
                 : undefined;
@@ -742,7 +764,16 @@ export default function BaseballField({
                   className="absolute transform -translate-x-1/2 -translate-y-1/2"
                   style={{ left: `${coord.x}%`, top: `${coord.y}%`, zIndex: 1 }}
                 >
-                  {isPitcher ? (
+                  {isDisabled ? (
+                    <div className="bg-gray-200/80 rounded shadow-md border border-dashed border-gray-400 min-w-[90px] opacity-60">
+                      <div className="bg-gray-500 text-white text-xs font-bold px-2 py-0.5 text-center rounded-t">
+                        {pos}
+                      </div>
+                      <div className="text-[10px] text-gray-500 italic text-center py-2">
+                        disabled
+                      </div>
+                    </div>
+                  ) : isPitcher ? (
                     <PitcherBox
                       players={players}
                       allPlayers={allPlayers || []}

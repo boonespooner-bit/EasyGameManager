@@ -80,8 +80,23 @@ export async function POST(
     ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
   }));
 
+  const gameWithSandlot = game as unknown as {
+    sandlotRules?: boolean;
+    extraOutfielder?: boolean;
+    disabledPositions?: string[] | null;
+  };
+  const sandlotOn = !!gameWithSandlot.sandlotRules;
+
   const suggestions = generateGamePlan(
-    playersWithRatings, seasonHistory, undefined, undefined, historicalFrequency,
+    playersWithRatings,
+    seasonHistory,
+    undefined,
+    undefined,
+    historicalFrequency,
+    {
+      disabledPositions: sandlotOn ? (gameWithSandlot.disabledPositions ?? []) : [],
+      extraOutfielder: sandlotOn ? !!gameWithSandlot.extraOutfielder : false,
+    },
   );
 
   return NextResponse.json({ suggestions });

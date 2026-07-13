@@ -119,6 +119,9 @@ export async function GET(
     gameBattingOrder,
     gameBalls,
     heldPositions: game.heldPositions ?? [],
+    sandlotRules: (game as unknown as { sandlotRules?: boolean }).sandlotRules ?? false,
+    extraOutfielder: (game as unknown as { extraOutfielder?: boolean }).extraOutfielder ?? false,
+    disabledPositions: (game as unknown as { disabledPositions?: string[] }).disabledPositions ?? [],
     previousGameBench,
   });
 }
@@ -149,11 +152,25 @@ export async function PUT(
     data.date = new Date(d.includes("T") ? d : d + "T12:00:00");
   }
   if (body.heldPositions !== undefined) data.heldPositions = body.heldPositions;
+  if (body.sandlotRules !== undefined) data.sandlotRules = !!body.sandlotRules;
+  if (body.extraOutfielder !== undefined) data.extraOutfielder = !!body.extraOutfielder;
+  if (body.disabledPositions !== undefined) data.disabledPositions = body.disabledPositions;
 
-  const game = await prisma.game.update({
-    where: { id: gameId },
-    data,
-  });
+  // Try full update; fall back gracefully if sandlot columns don't exist yet.
+  let game;
+  try {
+    game = await prisma.game.update({
+      where: { id: gameId },
+      data,
+    });
+  } catch {
+    const { sandlotRules: _sr, extraOutfielder: _eo, disabledPositions: _dp, ...safeData } = data;
+    void _sr; void _eo; void _dp;
+    game = await prisma.game.update({
+      where: { id: gameId },
+      data: safeData,
+    });
+  }
 
   return NextResponse.json(game);
 }

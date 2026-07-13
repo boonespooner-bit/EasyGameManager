@@ -48,6 +48,9 @@ interface GameData {
   gameBalls?: { id: string; playerId: string; reason: string }[];
   heldPositions?: { playerId: string; inning: number; position: string }[];
   previousGameBench?: { date: string; opponent: string; players: string[] } | null;
+  sandlotRules?: boolean;
+  extraOutfielder?: boolean;
+  disabledPositions?: string[];
 }
 
 export default function GamePlanPage() {
@@ -88,6 +91,8 @@ export default function GamePlanPage() {
   const [showCopyPicker, setShowCopyPicker] = useState(false);
   const [pastGames, setPastGames] = useState<{ id: string; opponent: string; date: string; isLocked: boolean }[]>([]);
   const [copying, setCopying] = useState(false);
+  const [sandlotOpen, setSandlotOpen] = useState(false);
+  const [savingSandlot, setSavingSandlot] = useState(false);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -573,6 +578,32 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
+  const handleSandlotUpdate = async (updates: {
+    sandlotRules?: boolean;
+    extraOutfielder?: boolean;
+    disabledPositions?: string[];
+  }) => {
+    if (!game) return;
+    setSavingSandlot(true);
+    const res = await fetch(`/api/teams/${teamId}/games/${gameId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      // Regenerate to reflect new sandlot settings — clear held positions
+      setHeldPositions([]);
+      await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      await saveHeldPositions([]);
+      await fetchGame(false);
+    }
+    setSavingSandlot(false);
+  };
+
   const handleOpenCopyPicker = async () => {
     setShowCopyPicker(true);
     const res = await fetch(`/api/teams/${teamId}/games`);
@@ -706,6 +737,18 @@ export default function GamePlanPage() {
               }`}
             >
               Manage Roster
+            </button>
+          )}
+          {!game.isLocked && (
+            <button
+              onClick={() => setSandlotOpen(!sandlotOpen)}
+              className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                sandlotOpen || game.sandlotRules
+                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Sandlot Rules{game.sandlotRules ? " (On)" : ""}
             </button>
           )}
           {!game.isLocked && (
@@ -908,6 +951,108 @@ export default function GamePlanPage() {
         </div>
       )}
 
+      {/* Sandlot Rules Panel */}
+      {sandlotOpen && !game.isLocked && (
+        <div className="no-print bg-white border border-amber-200 rounded-lg p-4 mb-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">Sandlot Rules</h3>
+            <button
+              onClick={() => setSandlotOpen(false)}
+              className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+            >
+              &times;
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Customize the field for this game. Changing anything will regenerate the lineup.
+          </p>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              disabled={savingSandlot}
+              checked={!!game.sandlotRules}
+              onChange={(e) =>
+                handleSandlotUpdate({
+                  sandlotRules: e.target.checked,
+                  ...(e.target.checked
+                    ? {}
+                    : { extraOutfielder: false, disabledPositions: [] }),
+                })
+              }
+              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Enable Sandlot Rules</span>
+          </label>
+
+          {game.sandlotRules && (
+            <div className="mt-3 pl-6 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={savingSandlot}
+                  checked={!!game.extraOutfielder}
+                  onChange={(e) => {
+                    const newExtra = e.target.checked;
+                    const newDisabled = (game.disabledPositions || []).filter(
+                      (p) => p !== "LCF" && p !== "RCF",
+                    );
+                    handleSandlotUpdate({
+                      extraOutfielder: newExtra,
+                      disabledPositions: newDisabled,
+                    });
+                  }}
+                  className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-sm text-gray-700">Extra outfielder</span>
+                <span className="text-xs text-gray-400">
+                  (LF, LCF, RCF, RF instead of LF, CF, RF)
+                </span>
+              </label>
+
+              <div>
+                <div className="text-xs font-medium text-gray-600 mb-1">Disabled positions</div>
+                <div className="flex flex-wrap gap-2">
+                  {(game.extraOutfielder
+                    ? ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"]
+                    : ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"]
+                  ).map((pos) => {
+                    const current = new Set(game.disabledPositions || []);
+                    const isDisabled = current.has(pos);
+                    return (
+                      <button
+                        key={pos}
+                        type="button"
+                        disabled={savingSandlot}
+                        onClick={() => {
+                          const next = new Set(current);
+                          if (next.has(pos)) next.delete(pos);
+                          else next.add(pos);
+                          handleSandlotUpdate({ disabledPositions: Array.from(next) });
+                        }}
+                        className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
+                          isDisabled
+                            ? "bg-gray-200 border-gray-400 text-gray-400 line-through"
+                            : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {pos}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Tap a position to disable it (no players will be assigned there).
+                </p>
+              </div>
+            </div>
+          )}
+          {savingSandlot && (
+            <p className="text-xs text-amber-600 mt-2">Regenerating lineup...</p>
+          )}
+        </div>
+      )}
+
       {/* Swap Position Dialog */}
       {swapDialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -1100,6 +1245,9 @@ export default function GamePlanPage() {
         onGameBallUpdate={handleGameBallUpdate}
         onGameBallRemove={handleGameBallRemove}
         previousGameBench={game.previousGameBench}
+        sandlotRules={game.sandlotRules}
+        extraOutfielder={game.extraOutfielder}
+        disabledPositions={game.disabledPositions}
       />
     </div>
   );

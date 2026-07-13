@@ -1,8 +1,17 @@
-import { POSITIONS, INNINGS, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position, type HistoricalFrequency } from "@/types";
+import { INNINGS, activePositionsFor, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position, type HistoricalFrequency } from "@/types";
 
-const POSITION_PRIORITY: Position[] = ["SS", "3B", "2B", "1B", "CF", "LF", "RF"];
-const INFIELD_POSITIONS: Position[] = ["3B", "SS", "2B", "1B"];
-const OUTFIELD_POSITIONS: Position[] = ["LF", "CF", "RF"];
+const ALL_INFIELD: Position[] = ["3B", "SS", "2B", "1B"];
+const ALL_OUTFIELD: Position[] = ["LF", "CF", "RF", "LCF", "RCF"];
+
+// Look up a player's rating for a position, falling back LCF/RCF to CF.
+function ratingFor(player: PlayerWithRatings, position: string): number {
+  const r = player.ratings.find((rr) => rr.position === position)?.rating;
+  if (r !== undefined) return r;
+  if (position === "LCF" || position === "RCF") {
+    return player.ratings.find((rr) => rr.position === "CF")?.rating ?? 1;
+  }
+  return 1;
+}
 
 // Innings 1-2 and 5-6 face the best hitters; innings 3-4 face the weakest
 function inningImportance(inning: number): number {
@@ -16,10 +25,24 @@ export function generateGamePlan(
   lockedPitchers?: { playerId: string; inning: number }[],
   lockedPositions?: { playerId: string; inning: number; position: string }[],
   historicalFrequency?: HistoricalFrequency[],
+  options?: { disabledPositions?: string[]; extraOutfielder?: boolean },
 ): GameAssignment[] {
   if (players.length === 0) {
     return [];
   }
+
+  const extraOutfielder = options?.extraOutfielder ?? false;
+  const disabledPositions = options?.disabledPositions ?? [];
+  const activePositions = activePositionsFor(extraOutfielder, disabledPositions);
+  const activeSet = new Set(activePositions);
+  const pIsActive = activeSet.has("P");
+  const cIsActive = activeSet.has("C");
+  // Positions to fill in Phase 3 (non P/C), ordered by fielding importance
+  const POSITION_PRIORITY: Position[] = activePositions.filter(
+    (p) => p !== "P" && p !== "C",
+  );
+  const INFIELD_POSITIONS: Position[] = ALL_INFIELD.filter((p) => activeSet.has(p));
+  const OUTFIELD_POSITIONS: Position[] = ALL_OUTFIELD.filter((p) => activeSet.has(p));
 
   const historyMap = new Map(seasonHistory.map((h) => [h.playerId, h]));
 
@@ -34,7 +57,7 @@ export function generateGamePlan(
     }
   }
   const numPlayers = players.length;
-  const numPositions = POSITIONS.length; // 9
+  const numPositions = activePositions.length;
 
   const assignments: GameAssignment[] = [];
   const gamePositionCounts: Record<string, Record<string, number>> = {};
@@ -142,20 +165,24 @@ export function generateGamePlan(
     }
   }
 
-  // Phase 1: Use locked pitchers if any, otherwise auto-plan
-  const pitchingSchedule = allLockedPitchers.length > 0
-    ? allLockedPitchers
-    : planPitchingSchedule(players, activeByInning, historyMap, freqMap);
+  // Phase 1: Use locked pitchers if any, otherwise auto-plan (skip if P disabled)
+  const pitchingSchedule = !pIsActive
+    ? []
+    : allLockedPitchers.length > 0
+      ? allLockedPitchers
+      : planPitchingSchedule(players, activeByInning, historyMap, freqMap);
 
   // Extract locked catcher positions
   const lockedCatcherPositions = lockedPositions
     ?.filter((lp) => lp.position === "C")
     .map((lp) => ({ playerId: lp.playerId, inning: lp.inning })) || [];
 
-  // Phase 2: Pre-plan catching schedule across all innings
-  const catchingSchedule = planCatchingSchedule(
-    players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions, freqMap,
-  );
+  // Phase 2: Pre-plan catching schedule across all innings (skip if C disabled)
+  const catchingSchedule = !cIsActive
+    ? []
+    : planCatchingSchedule(
+        players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions, freqMap,
+      );
 
   // Phase 3: Assign remaining positions inning by inning
   // Lock in pitcher and catcher assignments first
@@ -172,9 +199,11 @@ export function generateGamePlan(
   }
 
   // Also add any other locked field positions (non-P, non-C, non-BENCH)
+  // Skip locks that refer to disabled positions.
   if (lockedPositions) {
     for (const lp of lockedPositions) {
       if (lp.position !== "P" && lp.position !== "C" && lp.position !== "BENCH") {
+        if (!activeSet.has(lp.position as Position)) continue;
         phaseLockedAssignments.get(lp.inning)?.set(lp.playerId, lp.position);
       }
     }
@@ -208,12 +237,10 @@ export function generateGamePlan(
     const unfilledPositions = POSITION_PRIORITY.filter((p) => !filledPositions.has(p));
     const sortedPositions = [...unfilledPositions].sort((posA, posB) => {
       const eligibleA = active.filter((p) =>
-        !assignedPlayers.has(p.id) &&
-        (p.ratings.find((r) => r.position === posA)?.rating ?? 1) !== 0,
+        !assignedPlayers.has(p.id) && ratingFor(p, posA) !== 0,
       ).length;
       const eligibleB = active.filter((p) =>
-        !assignedPlayers.has(p.id) &&
-        (p.ratings.find((r) => r.position === posB)?.rating ?? 1) !== 0,
+        !assignedPlayers.has(p.id) && ratingFor(p, posB) !== 0,
       ).length;
       return eligibleA - eligibleB;
     });
@@ -226,7 +253,7 @@ export function generateGamePlan(
       for (const player of active) {
         if (assignedPlayers.has(player.id)) continue;
 
-        const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+        const rating = ratingFor(player, position);
         // DNP: rating 0 means player should never play this position
         if (rating === 0) continue;
         const history = historyMap.get(player.id);
@@ -293,8 +320,8 @@ export function generateGamePlan(
     // them with a player at another position who CAN play both positions.
     const inningAssignments = assignments.filter((a) => a.inning === inning && a.position !== "BENCH");
     for (const assignment of inningAssignments) {
-      const rating = players.find((p) => p.id === assignment.playerId)
-        ?.ratings.find((r) => r.position === assignment.position)?.rating ?? 1;
+      const thisPlayerFound = players.find((p) => p.id === assignment.playerId);
+      const rating = thisPlayerFound ? ratingFor(thisPlayerFound, assignment.position) : 1;
       if (rating !== 0) continue; // No DNP violation
 
       // This player has DNP for their assigned position — try to swap
@@ -305,11 +332,11 @@ export function generateGamePlan(
         if (!otherPlayer || !thisPlayer) continue;
 
         // Check: can otherPlayer play assignment.position (non-DNP)?
-        const otherRatingForThisPos = otherPlayer.ratings.find((r) => r.position === assignment.position)?.rating ?? 1;
+        const otherRatingForThisPos = ratingFor(otherPlayer, assignment.position);
         if (otherRatingForThisPos === 0) continue;
 
         // Check: can thisPlayer play other.position (non-DNP)?
-        const thisRatingForOtherPos = thisPlayer.ratings.find((r) => r.position === other.position)?.rating ?? 1;
+        const thisRatingForOtherPos = ratingFor(thisPlayer, other.position);
         if (thisRatingForOtherPos === 0) continue;
 
         // Swap positions
@@ -322,12 +349,12 @@ export function generateGamePlan(
 
     // Safety: assign any remaining unassigned active players to unfilled positions
     // Respect DNP — skip positions where the player has rating 0
-    const allPositions: (Position | "BENCH")[] = ["P", "C", ...POSITION_PRIORITY];
+    const allPositions: Position[] = activePositions;
     for (const player of active) {
       if (assignedPlayers.has(player.id)) continue;
       for (const position of allPositions) {
         if (filledPositions.has(position)) continue;
-        const rating = player.ratings.find((r) => r.position === position)?.rating ?? 1;
+        const rating = ratingFor(player, position);
         if (rating === 0) continue; // Respect DNP
         assignments.push({
           playerId: player.id,
@@ -375,13 +402,10 @@ export function generateGamePlan(
     }
   }
 
-  const playersNeedingInfield = players.filter((p) => {
+  const playersNeedingInfield = INFIELD_POSITIONS.length === 0 ? [] : players.filter((p) => {
     if (playerInfieldCount[p.id] > 0) return false;
     // Skip if player has DNP for ALL infield positions
-    const hasAnyInfield = INFIELD_POSITIONS.some((pos) => {
-      const rating = p.ratings.find((r) => r.position === pos)?.rating ?? 1;
-      return rating !== 0;
-    });
+    const hasAnyInfield = INFIELD_POSITIONS.some((pos) => ratingFor(p, pos) !== 0);
     return hasAnyInfield;
   });
 
@@ -414,15 +438,11 @@ export function generateGamePlan(
         if ((playerInfieldCount[otherPlayer.id] || 0) <= 1) continue;
 
         // Can other player play our outfield position?
-        const otherOutfieldRating = otherPlayer.ratings.find(
-          (r) => r.position === playerAssignment.position,
-        )?.rating ?? 1;
+        const otherOutfieldRating = ratingFor(otherPlayer, playerAssignment.position);
         if (otherOutfieldRating === 0) continue;
 
         // Can this player play the infield position?
-        const thisInfieldRating = player.ratings.find(
-          (r) => r.position === otherAssignment.position,
-        )?.rating ?? 1;
+        const thisInfieldRating = ratingFor(player, otherAssignment.position);
         if (thisInfieldRating === 0) continue;
 
         // Swap
@@ -459,9 +479,9 @@ function planPitchingSchedule(
 
   // Score each player for pitching (exclude DNP players with rating 0)
   const pitchScores = players
-    .filter((p) => (p.ratings.find((r) => r.position === "P")?.rating ?? 1) !== 0)
+    .filter((p) => ratingFor(p, "P") !== 0)
     .map((p) => {
-      const rating = p.ratings.find((r) => r.position === "P")?.rating ?? 1;
+      const rating = ratingFor(p, "P");
       const history = historyMap.get(p.id);
       let score = rating;
       if (freqMap.size > 0) {
@@ -582,9 +602,9 @@ function planCatchingSchedule(
 
   // Score each player for catching (exclude DNP players with rating 0)
   const catchScores = players
-    .filter((p) => (p.ratings.find((r) => r.position === "C")?.rating ?? 1) !== 0)
+    .filter((p) => ratingFor(p, "C") !== 0)
     .map((p) => {
-      const rating = p.ratings.find((r) => r.position === "C")?.rating ?? 1;
+      const rating = ratingFor(p, "C");
       const history = historyMap.get(p.id);
       let score = rating;
       if (freqMap.size > 0) {
