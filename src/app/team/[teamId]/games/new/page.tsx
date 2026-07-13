@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { POSITIONS, type Position } from "@/types";
+import { POSITIONS } from "@/types";
 
 interface RosterPlayer {
   id: string;
@@ -39,6 +39,20 @@ export default function NewGamePage() {
     POSITIONS.forEach((p) => (r[p] = 5));
     return r;
   });
+
+  // Sandlot rules
+  const [sandlotRules, setSandlotRules] = useState(false);
+  const [extraOutfielder, setExtraOutfielder] = useState(false);
+  const [disabledPositions, setDisabledPositions] = useState<Set<string>>(new Set());
+
+  const toggleDisabledPosition = (pos: string) => {
+    setDisabledPositions((prev) => {
+      const next = new Set(prev);
+      if (next.has(pos)) next.delete(pos);
+      else next.add(pos);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -95,6 +109,9 @@ export default function NewGamePage() {
         date,
         excludedPlayerIds: Array.from(excludedIds),
         poolPlayers,
+        sandlotRules,
+        extraOutfielder: sandlotRules ? extraOutfielder : false,
+        disabledPositions: sandlotRules ? Array.from(disabledPositions) : [],
       }),
     });
 
@@ -241,6 +258,83 @@ export default function NewGamePage() {
             >
               + Add Pool Player
             </button>
+          )}
+        </div>
+
+        {/* Sandlot Rules */}
+        <div className="border-t pt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sandlotRules}
+              onChange={(e) => setSandlotRules(e.target.checked)}
+              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Sandlot Rules</span>
+            <span className="text-xs text-gray-400">(disable positions or add an extra outfielder)</span>
+          </label>
+
+          {sandlotRules && (
+            <div className="mt-3 pl-6 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={extraOutfielder}
+                  onChange={(e) => {
+                    setExtraOutfielder(e.target.checked);
+                    if (e.target.checked) {
+                      setDisabledPositions((prev) => {
+                        const next = new Set(prev);
+                        next.delete("LCF");
+                        next.delete("RCF");
+                        return next;
+                      });
+                    } else {
+                      setDisabledPositions((prev) => {
+                        const next = new Set(prev);
+                        next.delete("LCF");
+                        next.delete("RCF");
+                        return next;
+                      });
+                    }
+                  }}
+                  className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-sm text-gray-700">Extra outfielder</span>
+                <span className="text-xs text-gray-400">
+                  (LF, LCF, RCF, RF instead of LF, CF, RF)
+                </span>
+              </label>
+
+              <div>
+                <div className="text-xs font-medium text-gray-600 mb-1">Disabled positions</div>
+                <div className="flex flex-wrap gap-2">
+                  {(extraOutfielder
+                    ? ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"]
+                    : POSITIONS
+                  ).map((pos) => {
+                    const disabled = disabledPositions.has(pos);
+                    return (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => toggleDisabledPosition(pos)}
+                        className={`text-xs px-2 py-1 rounded border transition-colors ${
+                          disabled
+                            ? "bg-gray-200 border-gray-400 text-gray-400 line-through"
+                            : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {pos}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Tap a position to disable it (no players will be assigned there).
+                </p>
+              </div>
+            </div>
           )}
         </div>
 

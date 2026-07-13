@@ -74,12 +74,24 @@ export async function POST(
     ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
   }));
 
+  const gameWithSandlot = game as unknown as {
+    sandlotRules?: boolean;
+    extraOutfielder?: boolean;
+    disabledPositions?: string[] | null;
+  };
+  const sandlotOn = !!gameWithSandlot.sandlotRules;
+
   // Regenerate with locked pitchers and locked positions
   const newAssignments = generateGamePlan(
     playersWithRatings,
     seasonHistory,
     lockedPitchers.length > 0 ? lockedPitchers : undefined,
     lockedPositions.length > 0 ? lockedPositions : undefined,
+    undefined,
+    {
+      disabledPositions: sandlotOn ? (gameWithSandlot.disabledPositions ?? []) : [],
+      extraOutfielder: sandlotOn ? !!gameWithSandlot.extraOutfielder : false,
+    },
   );
 
   // Save new assignments

@@ -37,7 +37,15 @@ export async function POST(
     return NextResponse.json({ error: "No permission" }, { status: 403 });
   }
 
-  const { opponent, date, excludedPlayerIds = [], poolPlayers = [] } = await req.json();
+  const {
+    opponent,
+    date,
+    excludedPlayerIds = [],
+    poolPlayers = [],
+    sandlotRules = false,
+    extraOutfielder = false,
+    disabledPositions = [],
+  } = await req.json();
 
   // Get roster players (non-pool players)
   const allPlayersRaw = await prisma.player.findMany({
@@ -97,23 +105,56 @@ export async function POST(
     ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
   }));
 
-  const assignments = generateGamePlan(playersWithRatings, seasonHistory);
-
-  const game = await prisma.game.create({
-    data: {
-      teamId,
-      opponent,
-      date: new Date(date.includes("T") ? date : date + "T12:00:00"),
-      innings: {
-        create: assignments.map((a) => ({
-          playerId: a.playerId,
-          inning: a.inning,
-          position: a.position,
-        })),
-      },
+  const assignments = generateGamePlan(
+    playersWithRatings,
+    seasonHistory,
+    undefined,
+    undefined,
+    undefined,
+    {
+      disabledPositions: sandlotRules ? (disabledPositions as string[]) : [],
+      extraOutfielder: sandlotRules ? !!extraOutfielder : false,
     },
-    include: { innings: { include: { player: true } } },
-  });
+  );
+
+  // Safe against unmigrated DBs — try with sandlot fields, fall back without.
+  let game;
+  try {
+    game = await prisma.game.create({
+      data: {
+        teamId,
+        opponent,
+        date: new Date(date.includes("T") ? date : date + "T12:00:00"),
+        sandlotRules: !!sandlotRules,
+        extraOutfielder: sandlotRules ? !!extraOutfielder : false,
+        disabledPositions: sandlotRules ? (disabledPositions as string[]) : [],
+        innings: {
+          create: assignments.map((a) => ({
+            playerId: a.playerId,
+            inning: a.inning,
+            position: a.position,
+          })),
+        },
+      },
+      include: { innings: { include: { player: true } } },
+    });
+  } catch {
+    game = await prisma.game.create({
+      data: {
+        teamId,
+        opponent,
+        date: new Date(date.includes("T") ? date : date + "T12:00:00"),
+        innings: {
+          create: assignments.map((a) => ({
+            playerId: a.playerId,
+            inning: a.inning,
+            position: a.position,
+          })),
+        },
+      },
+      include: { innings: { include: { player: true } } },
+    });
+  }
 
   // Create exclusions and link pool players (safe if tables/columns don't exist yet)
   try {
