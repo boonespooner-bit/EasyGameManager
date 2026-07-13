@@ -222,24 +222,28 @@ export default function RosterPage() {
                         })}
                         <td className="text-center px-4 py-3">
                           {confirmDeleteId === player.id ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <span className="text-xs text-red-600 font-medium">Delete?</span>
-                              <button
-                                onClick={async () => {
-                                  const res = await fetch(`/api/teams/${teamId}/players/${player.id}`, { method: "DELETE" });
-                                  if (res.ok) fetchTeam();
-                                  setConfirmDeleteId(null);
-                                }}
-                                className="text-white bg-red-600 hover:bg-red-700 text-xs font-medium px-2 py-0.5 rounded"
-                              >
-                                Yes
-                              </button>
-                              <button
-                                onClick={() => setConfirmDeleteId(null)}
-                                className="text-gray-500 hover:text-gray-700 text-xs font-medium px-2 py-0.5 rounded border border-gray-300"
-                              >
-                                No
-                              </button>
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              <span className="text-xs text-red-600 font-medium">
+                                Remove from roster? Unlocked games will be regenerated.
+                              </span>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={async () => {
+                                    const res = await fetch(`/api/teams/${teamId}/players/${player.id}`, { method: "DELETE" });
+                                    if (res.ok) fetchTeam();
+                                    setConfirmDeleteId(null);
+                                  }}
+                                  className="text-white bg-red-600 hover:bg-red-700 text-xs font-medium px-2 py-0.5 rounded"
+                                >
+                                  Yes, remove
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="text-gray-500 hover:text-gray-700 text-xs font-medium px-2 py-0.5 rounded border border-gray-300"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <div className="flex items-center justify-center gap-3">
