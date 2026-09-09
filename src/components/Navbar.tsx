@@ -24,7 +24,7 @@ export default function Navbar() {
               className="text-sm bg-amber-600 hover:bg-amber-500 px-3 py-1 rounded transition-colors font-semibold"
               title="Admin overview"
             >
-              God View
+              Admin View
             </Link>
           )}
           <span className="text-sm text-green-200">{session.user?.name || session.user?.email}</span>
