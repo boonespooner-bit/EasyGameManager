@@ -120,7 +120,7 @@ export default function RosterPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{team.name} Roster</h1>
-          <p className="text-sm text-gray-500">{team.players.length}/12 players</p>
+          <p className="text-sm text-gray-500">{team.players.length}/13 players</p>
         </div>
         <div className="flex gap-3">
           <Link
@@ -135,7 +135,7 @@ export default function RosterPage() {
           >
             Stats
           </Link>
-          {team.players.length < 12 && (
+          {team.players.length < 13 && (
             <button
               onClick={() => setShowAddPlayer(true)}
               className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
@@ -278,7 +278,7 @@ export default function RosterPage() {
         </>
       ) : (
         <div className="text-center py-12 bg-white rounded-lg shadow-sm">
-          <p className="text-gray-500">No players yet. Add your 12 players to get started!</p>
+          <p className="text-gray-500">No players yet. Add your 13 players to get started!</p>
         </div>
       )}
 
@@ -662,7 +662,7 @@ function PlayerForm({
           <input
             type="number"
             min={1}
-            max={12}
+            max={13}
             value={battingOrder}
             onChange={(e) => setBattingOrder(parseInt(e.target.value) || 1)}
             className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
