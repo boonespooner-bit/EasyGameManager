@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { POSITIONS } from "@/types";
+import { regenerateFutureGames } from "@/lib/regenerate";
 
 export async function GET(
   _req: NextRequest,
@@ -57,6 +58,9 @@ export async function POST(
     },
     include: { ratings: true },
   });
+
+  // Slot the new player into every unlocked game
+  await regenerateFutureGames(teamId);
 
   return NextResponse.json(player, { status: 201 });
 }

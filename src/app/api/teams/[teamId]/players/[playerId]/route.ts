@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { regenerateFutureGames } from "@/lib/regenerate";
 
 export async function PUT(
   req: NextRequest,
@@ -99,84 +100,9 @@ export async function DELETE(
   }
 
   await prisma.player.delete({ where: { id: playerId } });
+
+  // Rebuild every unlocked game so the departing player's spots are filled
+  await regenerateFutureGames(teamId);
+
   return NextResponse.json({ success: true });
-}
-
-async function regenerateFutureGames(teamId: string) {
-  const { generateGamePlan, buildSeasonHistory } = await import("@/lib/algorithm");
-
-  const futureGames = await prisma.game.findMany({
-    where: { teamId, isLocked: false },
-    orderBy: { date: "asc" },
-    include: { innings: true },
-  });
-
-  const lockedGames = await prisma.game.findMany({
-    where: { teamId, isLocked: true },
-    include: { innings: true },
-  });
-
-  const allPlayers = await prisma.player.findMany({
-    where: { teamId },
-    include: { ratings: true },
-  });
-  const rosterPlayers = allPlayers.filter((p) => !p.isPoolPlayer);
-
-  if (rosterPlayers.length === 0) return;
-
-  const pastAssignments = lockedGames.map((g) =>
-    g.innings.map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),
-  );
-
-  let cumulativeHistory = pastAssignments;
-
-  for (const game of futureGames) {
-    // Query exclusions and pool players separately (safe if tables don't exist yet)
-    let exclusions: { playerId: string }[] = [];
-    let gamePoolPlayers: typeof rosterPlayers = [];
-    try {
-      exclusions = await prisma.gameExclusion.findMany({
-        where: { gameId: game.id },
-        select: { playerId: true },
-      });
-    } catch { /* table may not exist */ }
-    try {
-      gamePoolPlayers = await prisma.player.findMany({
-        where: { poolGameId: game.id },
-        include: { ratings: true },
-      });
-    } catch { /* column may not exist */ }
-
-    const excludedIds = new Set(exclusions.map((e) => e.playerId));
-    const availablePlayers = rosterPlayers.filter((p) => !excludedIds.has(p.id));
-    const gamePlayers = [
-      ...availablePlayers,
-      ...gamePoolPlayers,
-    ];
-
-    const seasonHistory = buildSeasonHistory(cumulativeHistory);
-    const playersWithRatings = gamePlayers.map((p) => ({
-      id: p.id,
-      name: p.name,
-      battingOrder: p.battingOrder,
-      ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
-    }));
-
-    const newAssignments = generateGamePlan(playersWithRatings, seasonHistory);
-
-    await prisma.inningAssignment.deleteMany({ where: { gameId: game.id } });
-    await prisma.inningAssignment.createMany({
-      data: newAssignments.map((a) => ({
-        gameId: game.id,
-        playerId: a.playerId,
-        inning: a.inning,
-        position: a.position,
-      })),
-    });
-
-    cumulativeHistory = [
-      ...cumulativeHistory,
-      newAssignments.map((a) => ({ playerId: a.playerId, inning: a.inning, position: a.position })),
-    ];
-  }
 }
