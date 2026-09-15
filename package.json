@@ -8,7 +8,9 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
@@ -31,6 +33,7 @@
     "eslint-config-next": "^15.2.0",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^5.0.0"
   }
 }
