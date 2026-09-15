@@ -43,3 +43,6 @@ next-env.d.ts
 
 # claude code local settings (contains secrets)
 .claude/settings.local.json
+
+# Claude Code project instructions
+CLAUDE.md
