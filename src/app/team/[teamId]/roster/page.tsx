@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { POSITIONS } from "@/types";
+import { parseNames } from "@/lib/parseNames";
 import Link from "next/link";
 
 interface PlayerRating {
@@ -750,39 +751,19 @@ function BulkAddPlayers({
   const [error, setError] = useState("");
 
   const handleParse = () => {
-    const lines = rawText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    const names = parseNames(rawText);
 
-    if (lines.length === 0) {
+    if (names.length === 0) {
       setError("No names found. Paste one name per line.");
       setParsed([]);
       return;
     }
 
-    if (lines.length > maxPlayers) {
+    if (names.length > maxPlayers) {
       setError(`Too many players — only ${maxPlayers} roster spot${maxPlayers === 1 ? "" : "s"} remaining.`);
       setParsed([]);
       return;
     }
-
-    const hasTab = lines.some((l) => l.includes("\t"));
-
-    const names = lines.map((line) => {
-      if (hasTab) {
-        const parts = line.split("\t").map((s) => s.trim());
-        return { firstName: parts[0] || "", lastName: parts[1] || "" };
-      }
-      const firstSpace = line.indexOf(" ");
-      if (firstSpace === -1) {
-        return { firstName: line, lastName: "" };
-      }
-      return {
-        firstName: line.slice(0, firstSpace),
-        lastName: line.slice(firstSpace + 1),
-      };
-    });
 
     setError("");
     setParsed(names);
