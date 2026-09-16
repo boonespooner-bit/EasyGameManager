@@ -774,13 +774,13 @@ function BulkAddPlayers({
         const parts = line.split("\t").map((s) => s.trim());
         return { firstName: parts[0] || "", lastName: parts[1] || "" };
       }
-      const lastSpace = line.lastIndexOf(" ");
-      if (lastSpace === -1) {
+      const firstSpace = line.indexOf(" ");
+      if (firstSpace === -1) {
         return { firstName: line, lastName: "" };
       }
       return {
-        firstName: line.slice(0, lastSpace),
-        lastName: line.slice(lastSpace + 1),
+        firstName: line.slice(0, firstSpace),
+        lastName: line.slice(firstSpace + 1),
       };
     });
 
