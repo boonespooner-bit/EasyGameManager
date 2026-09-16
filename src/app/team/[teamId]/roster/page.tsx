@@ -692,7 +692,7 @@ function PlayerForm({
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">9 \u2605 = Best &nbsp; 1 \u25BD = Worst &nbsp; DNP = Do Not Play</p>
+        <p className="text-xs text-gray-400 mt-1">9 {"\u2605"} = Best &nbsp; 1 {"\u25BD"} = Worst &nbsp; DNP = Do Not Play</p>
       </div>
 
       <div className="flex gap-2">
