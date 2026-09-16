@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { POSITIONS } from "@/types";
+import { parseNames } from "@/lib/parseNames";
 import Link from "next/link";
 
 interface PlayerRating {
@@ -53,6 +54,7 @@ export default function RosterPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [pitchingToggles, setPitchingToggles] = useState<Record<string, boolean>>({});
   const [confirmRemoveCoachId, setConfirmRemoveCoachId] = useState<string | null>(null);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
 
   const fetchTeam = useCallback(async () => {
     const res = await fetch(`/api/teams/${teamId}`);
@@ -120,7 +122,7 @@ export default function RosterPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{team.name} Roster</h1>
-          <p className="text-sm text-gray-500">{team.players.length}/13 players</p>
+          <p className="text-sm text-gray-500">{team.players.length}/18 players</p>
         </div>
         <div className="flex gap-3">
           <Link
@@ -135,13 +137,21 @@ export default function RosterPage() {
           >
             Stats
           </Link>
-          {team.players.length < 13 && (
-            <button
-              onClick={() => setShowAddPlayer(true)}
-              className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
-            >
-              + Add Player
-            </button>
+          {team.players.length < 18 && (
+            <>
+              <button
+                onClick={() => setShowAddPlayer(true)}
+                className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
+              >
+                + Add Player
+              </button>
+              <button
+                onClick={() => setShowBulkAdd(true)}
+                className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
+              >
+                Bulk Add
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -153,6 +163,17 @@ export default function RosterPage() {
           nextBattingOrder={team.players.length + 1}
           onSave={() => { setShowAddPlayer(false); fetchTeam(); }}
           onCancel={() => setShowAddPlayer(false)}
+        />
+      )}
+
+      {/* Bulk Add Players */}
+      {showBulkAdd && (
+        <BulkAddPlayers
+          teamId={teamId}
+          nextBattingOrder={team.players.length + 1}
+          maxPlayers={18 - team.players.length}
+          onDone={() => { setShowBulkAdd(false); fetchTeam(); }}
+          onCancel={() => setShowBulkAdd(false)}
         />
       )}
 
@@ -278,7 +299,7 @@ export default function RosterPage() {
         </>
       ) : (
         <div className="text-center py-12 bg-white rounded-lg shadow-sm">
-          <p className="text-gray-500">No players yet. Add your 13 players to get started!</p>
+          <p className="text-gray-500">No players yet. Add your players to get started!</p>
         </div>
       )}
 
@@ -662,7 +683,7 @@ function PlayerForm({
           <input
             type="number"
             min={1}
-            max={13}
+            max={18}
             value={battingOrder}
             onChange={(e) => setBattingOrder(parseInt(e.target.value) || 1)}
             className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
@@ -692,7 +713,7 @@ function PlayerForm({
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">9 \u2605 = Best &nbsp; 1 \u25BD = Worst &nbsp; DNP = Do Not Play</p>
+        <p className="text-xs text-gray-400 mt-1">9 {"\u2605"} = Best &nbsp; 1 {"\u25BD"} = Worst &nbsp; DNP = Do Not Play</p>
       </div>
 
       <div className="flex gap-2">
@@ -707,6 +728,140 @@ function PlayerForm({
           Cancel
         </button>
       </div>
+    </div>
+  );
+}
+
+function BulkAddPlayers({
+  teamId,
+  nextBattingOrder,
+  maxPlayers,
+  onDone,
+  onCancel,
+}: {
+  teamId: string;
+  nextBattingOrder: number;
+  maxPlayers: number;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [rawText, setRawText] = useState("");
+  const [parsed, setParsed] = useState<{ firstName: string; lastName: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleParse = () => {
+    const names = parseNames(rawText);
+
+    if (names.length === 0) {
+      setError("No names found. Paste one name per line.");
+      setParsed([]);
+      return;
+    }
+
+    if (names.length > maxPlayers) {
+      setError(`Too many players — only ${maxPlayers} roster spot${maxPlayers === 1 ? "" : "s"} remaining.`);
+      setParsed([]);
+      return;
+    }
+
+    setError("");
+    setParsed(names);
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    for (let i = 0; i < parsed.length; i++) {
+      const { firstName, lastName } = parsed[i];
+      await fetch(`/api/teams/${teamId}/players`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          jerseyNumber: null,
+          battingOrder: nextBattingOrder + i,
+          ratings: {},
+        }),
+      });
+    }
+    setSaving(false);
+    onDone();
+  };
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">Bulk Add Players</h3>
+      {parsed.length === 0 ? (
+        <>
+          <p className="text-xs text-gray-500 mb-2">
+            Paste names from a spreadsheet — two columns (first name, last name) or a single column of full names.
+          </p>
+          <textarea
+            value={rawText}
+            onChange={(e) => setRawText(e.target.value)}
+            rows={8}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none mb-2"
+            placeholder={"John\tSmith\nJane\tDoe\n\nor\n\nJohn Smith\nJane Doe"}
+            autoFocus
+          />
+          {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleParse}
+              disabled={!rawText.trim()}
+              className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+            >
+              Preview
+            </button>
+            <button onClick={onCancel} className="text-gray-500 hover:text-gray-700 px-3 text-sm">
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500 mb-2">
+            {parsed.length} player{parsed.length === 1 ? "" : "s"} to add. All will get default ratings (5 for every position).
+          </p>
+          <table className="w-full mb-3 text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500">
+                <th className="px-2 py-1">#</th>
+                <th className="px-2 py-1">First Name</th>
+                <th className="px-2 py-1">Last Name</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parsed.map((p, i) => (
+                <tr key={i} className="border-t border-gray-200">
+                  <td className="px-2 py-1 text-gray-400">{nextBattingOrder + i}</td>
+                  <td className="px-2 py-1">{p.firstName}</td>
+                  <td className="px-2 py-1">{p.lastName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+            >
+              {saving ? "Adding..." : `Add ${parsed.length} Player${parsed.length === 1 ? "" : "s"}`}
+            </button>
+            <button
+              onClick={() => { setParsed([]); setError(""); }}
+              className="text-gray-500 hover:text-gray-700 px-3 text-sm"
+            >
+              Back
+            </button>
+            <button onClick={onCancel} className="text-gray-500 hover:text-gray-700 px-3 text-sm">
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

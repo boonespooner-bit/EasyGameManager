@@ -35,10 +35,10 @@ export async function PUT(
     return NextResponse.json(gameBall);
   }
 
-  // Creating new - check max 2 per game
+  // Creating new - check max 3 per game
   const count = await prisma.gameBall.count({ where: { gameId } });
-  if (count >= 2) {
-    return NextResponse.json({ error: "Maximum 2 game balls per game" }, { status: 400 });
+  if (count >= 3) {
+    return NextResponse.json({ error: "Maximum 3 game balls per game" }, { status: 400 });
   }
 
   const gameBall = await prisma.gameBall.create({

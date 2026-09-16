@@ -946,13 +946,13 @@ export default function BaseballField({
               }}
             />
           ))}
-          {gameBalls.length < 2 && (
+          {gameBalls.length < 3 && (
             <GameBallSection
               allPlayers={allPlayers}
               editing={editingGameBallIndex === -1}
               selectedPlayerId={gameBallPlayerId}
               reason={gameBallReason}
-              label={gameBalls.length === 1 ? "Game Ball #2" : undefined}
+              label={gameBalls.length > 0 ? `Game Ball #${gameBalls.length + 1}` : undefined}
               onStartEdit={() => {
                 setGameBallPlayerId("");
                 setGameBallReason("");
