@@ -53,6 +53,7 @@ export default function RosterPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [pitchingToggles, setPitchingToggles] = useState<Record<string, boolean>>({});
   const [confirmRemoveCoachId, setConfirmRemoveCoachId] = useState<string | null>(null);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
 
   const fetchTeam = useCallback(async () => {
     const res = await fetch(`/api/teams/${teamId}`);
@@ -136,12 +137,20 @@ export default function RosterPage() {
             Stats
           </Link>
           {team.players.length < 13 && (
-            <button
-              onClick={() => setShowAddPlayer(true)}
-              className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
-            >
-              + Add Player
-            </button>
+            <>
+              <button
+                onClick={() => setShowAddPlayer(true)}
+                className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
+              >
+                + Add Player
+              </button>
+              <button
+                onClick={() => setShowBulkAdd(true)}
+                className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
+              >
+                Bulk Add
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -153,6 +162,17 @@ export default function RosterPage() {
           nextBattingOrder={team.players.length + 1}
           onSave={() => { setShowAddPlayer(false); fetchTeam(); }}
           onCancel={() => setShowAddPlayer(false)}
+        />
+      )}
+
+      {/* Bulk Add Players */}
+      {showBulkAdd && (
+        <BulkAddPlayers
+          teamId={teamId}
+          nextBattingOrder={team.players.length + 1}
+          maxPlayers={13 - team.players.length}
+          onDone={() => { setShowBulkAdd(false); fetchTeam(); }}
+          onCancel={() => setShowBulkAdd(false)}
         />
       )}
 
@@ -707,6 +727,160 @@ function PlayerForm({
           Cancel
         </button>
       </div>
+    </div>
+  );
+}
+
+function BulkAddPlayers({
+  teamId,
+  nextBattingOrder,
+  maxPlayers,
+  onDone,
+  onCancel,
+}: {
+  teamId: string;
+  nextBattingOrder: number;
+  maxPlayers: number;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [rawText, setRawText] = useState("");
+  const [parsed, setParsed] = useState<{ firstName: string; lastName: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleParse = () => {
+    const lines = rawText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length === 0) {
+      setError("No names found. Paste one name per line.");
+      setParsed([]);
+      return;
+    }
+
+    if (lines.length > maxPlayers) {
+      setError(`Too many players — only ${maxPlayers} roster spot${maxPlayers === 1 ? "" : "s"} remaining.`);
+      setParsed([]);
+      return;
+    }
+
+    const hasTab = lines.some((l) => l.includes("\t"));
+
+    const names = lines.map((line) => {
+      if (hasTab) {
+        const parts = line.split("\t").map((s) => s.trim());
+        return { firstName: parts[0] || "", lastName: parts[1] || "" };
+      }
+      const lastSpace = line.lastIndexOf(" ");
+      if (lastSpace === -1) {
+        return { firstName: line, lastName: "" };
+      }
+      return {
+        firstName: line.slice(0, lastSpace),
+        lastName: line.slice(lastSpace + 1),
+      };
+    });
+
+    setError("");
+    setParsed(names);
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    for (let i = 0; i < parsed.length; i++) {
+      const { firstName, lastName } = parsed[i];
+      await fetch(`/api/teams/${teamId}/players`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          jerseyNumber: null,
+          battingOrder: nextBattingOrder + i,
+          ratings: {},
+        }),
+      });
+    }
+    setSaving(false);
+    onDone();
+  };
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">Bulk Add Players</h3>
+      {parsed.length === 0 ? (
+        <>
+          <p className="text-xs text-gray-500 mb-2">
+            Paste names from a spreadsheet — two columns (first name, last name) or a single column of full names.
+          </p>
+          <textarea
+            value={rawText}
+            onChange={(e) => setRawText(e.target.value)}
+            rows={8}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none mb-2"
+            placeholder={"John\tSmith\nJane\tDoe\n\nor\n\nJohn Smith\nJane Doe"}
+            autoFocus
+          />
+          {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleParse}
+              disabled={!rawText.trim()}
+              className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+            >
+              Preview
+            </button>
+            <button onClick={onCancel} className="text-gray-500 hover:text-gray-700 px-3 text-sm">
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500 mb-2">
+            {parsed.length} player{parsed.length === 1 ? "" : "s"} to add. All will get default ratings (5 for every position).
+          </p>
+          <table className="w-full mb-3 text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500">
+                <th className="px-2 py-1">#</th>
+                <th className="px-2 py-1">First Name</th>
+                <th className="px-2 py-1">Last Name</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parsed.map((p, i) => (
+                <tr key={i} className="border-t border-gray-200">
+                  <td className="px-2 py-1 text-gray-400">{nextBattingOrder + i}</td>
+                  <td className="px-2 py-1">{p.firstName}</td>
+                  <td className="px-2 py-1">{p.lastName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+            >
+              {saving ? "Adding..." : `Add ${parsed.length} Player${parsed.length === 1 ? "" : "s"}`}
+            </button>
+            <button
+              onClick={() => { setParsed([]); setError(""); }}
+              className="text-gray-500 hover:text-gray-700 px-3 text-sm"
+            >
+              Back
+            </button>
+            <button onClick={onCancel} className="text-gray-500 hover:text-gray-700 px-3 text-sm">
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
