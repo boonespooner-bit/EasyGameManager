@@ -100,7 +100,7 @@ export default function AdminPage() {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">God View</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Admin View</h1>
           <p className="text-sm text-gray-500">
             All users, teams, and games on Easy Game Manager
           </p>
@@ -236,13 +236,15 @@ export default function AdminPage() {
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           {t.games.map((g) => (
-                            <div
+                            <Link
                               key={g.id}
-                              className={`border rounded-lg px-3 py-2 text-sm ${
+                              href={`/team/${t.id}/games/${g.id}`}
+                              className={`block border rounded-lg px-3 py-2 text-sm hover:shadow-md transition-shadow ${
                                 g.isLocked
-                                  ? "bg-green-50 border-green-200"
-                                  : "bg-blue-50 border-blue-200"
+                                  ? "bg-green-50 border-green-200 hover:bg-green-100"
+                                  : "bg-blue-50 border-blue-200 hover:bg-blue-100"
                               }`}
+                              title="Open game plan"
                             >
                               <div className="flex items-center justify-between">
                                 <span className="font-medium text-gray-900">vs {g.opponent}</span>
@@ -260,7 +262,7 @@ export default function AdminPage() {
                                 {new Date(g.date).toLocaleDateString()} &middot;{" "}
                                 {g.inningCount} inning row{g.inningCount === 1 ? "" : "s"}
                               </div>
-                            </div>
+                            </Link>
                           ))}
                         </div>
                       )}
