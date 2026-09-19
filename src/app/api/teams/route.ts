@@ -11,7 +11,7 @@ export async function GET() {
   const teams = await prisma.team.findMany({
     where: { members: { some: { userId } } },
     include: {
-      members: { include: { user: { select: { name: true, email: true } } } },
+      members: { include: { user: { select: { id: true, name: true, email: true } } } },
       players: true,
       _count: { select: { games: true } },
     },
