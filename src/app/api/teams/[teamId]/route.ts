@@ -53,6 +53,36 @@ export async function GET(
   return NextResponse.json({ ...filtered, gameBallCounts });
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ teamId: string }> },
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { teamId } = await params;
+  const userId = (session.user as { id: string }).id;
+
+  const member = await prisma.teamMember.findUnique({
+    where: { userId_teamId: { userId, teamId } },
+  });
+  if (!member || member.role !== "head_coach") {
+    return NextResponse.json({ error: "Only the head coach can rename a team" }, { status: 403 });
+  }
+
+  const { name } = await req.json();
+  if (!name || typeof name !== "string" || !name.trim()) {
+    return NextResponse.json({ error: "Team name is required" }, { status: 400 });
+  }
+
+  const team = await prisma.team.update({
+    where: { id: teamId },
+    data: { name: name.trim() },
+  });
+
+  return NextResponse.json(team);
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> },
