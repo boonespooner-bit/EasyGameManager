@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Team {
   id: string;
@@ -21,6 +21,8 @@ export default function DashboardPage() {
   const [teamName, setTeamName] = useState("");
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchTeams = () => {
     fetch("/api/teams")
@@ -46,6 +48,44 @@ export default function DashboardPage() {
       setEditingTeamId(null);
       fetchTeams();
     }
+  };
+
+  const exportTeam = async (teamId: string, teamName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const res = await fetch(`/api/teams/export?teamId=${teamId}`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${teamName.replace(/[^a-zA-Z0-9]/g, "_")}_export.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importTeam = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch("/api/teams/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        fetchTeams();
+      } else {
+        const err = await res.json();
+        alert(`Import failed: ${err.error || "Unknown error"}`);
+      }
+    } catch {
+      alert("Failed to read or parse the import file.");
+    }
+    setImporting(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   useEffect(() => {
@@ -79,12 +119,28 @@ export default function DashboardPage() {
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">My Teams</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors"
-        >
-          + New Team
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50"
+          >
+            {importing ? "Importing..." : "Import Team"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={importTeam}
+            className="hidden"
+          />
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-green-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors"
+          >
+            + New Team
+          </button>
+        </div>
       </div>
 
       {showCreate && (
@@ -184,14 +240,22 @@ export default function DashboardPage() {
                   <span>{team._count.games} games</span>
                 </div>
               </div>
-              {isHeadCoach && (
-              <button
-                onClick={(e) => deleteTeam(team.id, e)}
-                className="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1"
-              >
-                Delete
-              </button>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => exportTeam(team.id, team.name, e)}
+                  className="text-blue-500 hover:text-blue-700 text-sm font-medium px-3 py-1"
+                >
+                  Export
+                </button>
+                {isHeadCoach && (
+                <button
+                  onClick={(e) => deleteTeam(team.id, e)}
+                  className="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1"
+                >
+                  Delete
+                </button>
+                )}
+              </div>
             </div>
             );
           })}
