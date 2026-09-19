@@ -2,45 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-interface ExportedRating {
-  position: string;
-  rating: number;
-}
-
-interface ExportedPlayer {
-  name: string;
-  firstName: string;
-  lastName: string;
-  jerseyNumber: string | null;
-  battingOrder: number;
-  hasPitched?: boolean;
-  ratings: ExportedRating[];
-}
-
-interface ExportedGame {
-  opponent: string;
-  date: string;
-  isLocked: boolean;
-  heldPositions: unknown;
-  sandlotRules: boolean;
-  disabledPositions: unknown;
-  extraOutfielder: boolean;
-  poolPlayers: ExportedPlayer[];
-  assignments: { playerName: string; inning: number; position: string }[];
-  battingOrders: { playerName: string; order: number }[];
-  exclusions: { playerName: string }[];
-  gameBalls: { playerName: string; reason: string }[];
-}
-
-interface ExportData {
-  version: number;
-  team: {
-    name: string;
-    players: ExportedPlayer[];
-    games: ExportedGame[];
-  };
-}
+import { validateExportData, buildImportPlan } from "@/lib/teamData";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -48,20 +10,22 @@ export async function POST(req: NextRequest) {
 
   const userId = (session.user as { id: string }).id;
 
-  let data: ExportData;
+  let data: unknown;
   try {
     data = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!data.version || !data.team?.name || !Array.isArray(data.team.players)) {
+  if (!validateExportData(data)) {
     return NextResponse.json({ error: "Invalid export format" }, { status: 400 });
   }
 
+  const plan = buildImportPlan(data);
+
   const team = await prisma.team.create({
     data: {
-      name: data.team.name,
+      name: plan.teamName,
       members: {
         create: { userId, role: "head_coach" },
       },
@@ -70,15 +34,15 @@ export async function POST(req: NextRequest) {
 
   const playerIdMap: Record<string, string> = {};
 
-  for (const p of data.team.players) {
+  for (const p of plan.players) {
     const player = await prisma.player.create({
       data: {
         name: p.name,
-        firstName: p.firstName || "",
-        lastName: p.lastName || "",
+        firstName: p.firstName,
+        lastName: p.lastName,
         jerseyNumber: p.jerseyNumber,
         battingOrder: p.battingOrder,
-        hasPitched: p.hasPitched ?? false,
+        hasPitched: p.hasPitched,
         teamId: team.id,
         ratings: {
           create: p.ratings.map((r) => ({
@@ -91,12 +55,12 @@ export async function POST(req: NextRequest) {
     playerIdMap[p.name] = player.id;
   }
 
-  for (const g of data.team.games) {
+  for (const g of plan.games) {
     const game = await prisma.game.create({
       data: {
         teamId: team.id,
         opponent: g.opponent,
-        date: new Date(g.date),
+        date: g.date,
         isLocked: g.isLocked,
         heldPositions: g.heldPositions as undefined,
         sandlotRules: g.sandlotRules,
@@ -105,28 +69,26 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (g.poolPlayers?.length) {
-      for (const pp of g.poolPlayers) {
-        const poolPlayer = await prisma.player.create({
-          data: {
-            name: pp.name,
-            firstName: pp.firstName || "",
-            lastName: pp.lastName || "",
-            jerseyNumber: pp.jerseyNumber,
-            battingOrder: pp.battingOrder,
-            teamId: team.id,
-            isPoolPlayer: true,
-            poolGameId: game.id,
-            ratings: {
-              create: pp.ratings.map((r) => ({
-                position: r.position,
-                rating: r.rating,
-              })),
-            },
+    for (const pp of g.poolPlayers) {
+      const poolPlayer = await prisma.player.create({
+        data: {
+          name: pp.name,
+          firstName: pp.firstName,
+          lastName: pp.lastName,
+          jerseyNumber: pp.jerseyNumber,
+          battingOrder: pp.battingOrder,
+          teamId: team.id,
+          isPoolPlayer: true,
+          poolGameId: game.id,
+          ratings: {
+            create: pp.ratings.map((r) => ({
+              position: r.position,
+              rating: r.rating,
+            })),
           },
-        });
-        playerIdMap[pp.name] = poolPlayer.id;
-      }
+        },
+      });
+      playerIdMap[pp.name] = poolPlayer.id;
     }
 
     const assignmentData = g.assignments

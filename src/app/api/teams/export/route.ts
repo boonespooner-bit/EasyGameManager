@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { buildExportData } from "@/lib/teamData";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -41,65 +42,7 @@ export async function GET(req: NextRequest) {
 
   if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
 
-  const exportData = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    team: {
-      name: team.name,
-      players: team.players
-        .filter((p) => !p.isPoolPlayer)
-        .map((p) => ({
-          name: p.name,
-          firstName: p.firstName,
-          lastName: p.lastName,
-          jerseyNumber: p.jerseyNumber,
-          battingOrder: p.battingOrder,
-          hasPitched: p.hasPitched,
-          ratings: p.ratings.map((r) => ({
-            position: r.position,
-            rating: r.rating,
-          })),
-        })),
-      games: team.games.map((g) => ({
-        opponent: g.opponent,
-        date: g.date.toISOString(),
-        isLocked: g.isLocked,
-        heldPositions: g.heldPositions,
-        sandlotRules: g.sandlotRules,
-        disabledPositions: g.disabledPositions,
-        extraOutfielder: g.extraOutfielder,
-        poolPlayers: team.players
-          .filter((p) => p.isPoolPlayer && p.poolGameId === g.id)
-          .map((p) => ({
-            name: p.name,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            jerseyNumber: p.jerseyNumber,
-            battingOrder: p.battingOrder,
-            ratings: p.ratings.map((r) => ({
-              position: r.position,
-              rating: r.rating,
-            })),
-          })),
-        assignments: g.innings.map((a) => ({
-          playerName: team.players.find((p) => p.id === a.playerId)?.name || "",
-          inning: a.inning,
-          position: a.position,
-        })),
-        battingOrders: g.battingOrders.map((bo) => ({
-          playerName: team.players.find((p) => p.id === bo.playerId)?.name || "",
-          order: bo.order,
-        })),
-        exclusions: g.exclusions.map((ex) => ({
-          playerName: team.players.find((p) => p.id === ex.playerId)?.name || "",
-        })),
-        gameBalls: g.gameBalls.map((gb) => ({
-          playerName: team.players.find((p) => p.id === gb.playerId)?.name || "",
-          reason: gb.reason,
-        })),
-      })),
-    },
-  };
+  const exportData = buildExportData(team);
 
   const filename = `${team.name.replace(/[^a-zA-Z0-9]/g, "_")}_export.json`;
 
