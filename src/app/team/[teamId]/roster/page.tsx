@@ -122,7 +122,6 @@ export default function RosterPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{team.name} Roster</h1>
-          <p className="text-sm text-gray-500">{team.players.length}/18 players</p>
         </div>
         <div className="flex gap-3">
           <Link
