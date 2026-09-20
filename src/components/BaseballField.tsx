@@ -109,6 +109,7 @@ export default function BaseballField({
   const [gameBallReason, setGameBallReason] = useState("");
   const [showSitModal, setShowSitModal] = useState(false);
   const [skippedSwaps, setSkippedSwaps] = useState<Set<string>>(new Set());
+  const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
 
   // Players who have not sat (no BENCH assignment) at all in the game
   const notSatPlayers = useMemo(() => {
@@ -780,6 +781,7 @@ export default function BaseballField({
                       onPitcherChange={onPitcherChange}
                       onPitcherUnassign={onPitcherUnassign}
                       disabled={!!regenerating}
+                      highlightedPlayerId={highlightedPlayerId}
                     />
                   ) : (
                     <PositionBox
@@ -794,6 +796,7 @@ export default function BaseballField({
                       onPositionUnassign={onPositionUnassign}
                       disabled={regenerating}
                       heldInnings={heldInningsForPos}
+                      highlightedPlayerId={highlightedPlayerId}
                     />
                   )}
                 </div>
@@ -825,13 +828,15 @@ export default function BaseballField({
                         <div
                           key={p.playerId}
                           className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing ${
-                            isConsecutive
-                              ? "bg-red-100 border-red-400 text-red-800 font-bold animate-pulse"
-                              : isPlayerHeld
-                                ? "bg-amber-50 border-amber-300"
-                                : benchColor
-                                  ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
-                                  : "bg-white"
+                            highlightedPlayerId && p.playerId === highlightedPlayerId
+                              ? "bg-blue-200 border-blue-400 font-bold ring-1 ring-blue-400"
+                              : isConsecutive
+                                ? "bg-red-100 border-red-400 text-red-800 font-bold animate-pulse"
+                                : isPlayerHeld
+                                  ? "bg-amber-50 border-amber-300"
+                                  : benchColor
+                                    ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
+                                    : "bg-white"
                           }`}
                           draggable={!isLocked}
                           onDragStart={() => handleDragStart("BENCH", inning)}
@@ -977,7 +982,7 @@ export default function BaseballField({
         </div>
 
         {/* Batting Order */}
-        <div className="w-48">
+        <div className="w-48 min-w-fit">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Batting Order</h3>
           {!isLocked && onBattingOrderUpdate && (
             <p className="text-xs text-gray-400 mb-1">Drag to reorder</p>
@@ -989,7 +994,8 @@ export default function BaseballField({
                 className={`flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0 transition-colors ${
                   !isLocked && onBattingOrderUpdate ? "cursor-grab active:cursor-grabbing" : ""
                 } ${battingDragOverIndex === idx ? "bg-blue-50 border-t-2 border-t-blue-400" : "hover:bg-gray-50"
-                } ${battingDragIndex === idx ? "opacity-40" : ""}`}
+                } ${battingDragIndex === idx ? "opacity-40" : ""
+                } ${highlightedPlayerId === b.playerId ? "bg-blue-100 ring-2 ring-blue-400" : ""}`}
                 draggable={!isLocked && !!onBattingOrderUpdate}
                 onDragStart={(e) => {
                   setBattingDragIndex(idx);
@@ -1013,7 +1019,12 @@ export default function BaseballField({
               >
                 <span className="text-gray-300 text-lg leading-none select-none mr-1">&#8801;</span>
                 <span className="text-xs font-bold text-gray-400 w-4">{b.order}</span>
-                <span className="text-sm">{b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}</span>
+                <button
+                  className="text-sm text-left cursor-pointer"
+                  onClick={() => setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId)}
+                >
+                  {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
+                </button>
               </div>
             ))}
           </div>
@@ -1100,12 +1111,14 @@ function PitcherBox({
   onPitcherChange,
   onPitcherUnassign,
   disabled,
+  highlightedPlayerId,
 }: {
   players: ({ inning: number; playerId: string; name: string } | null)[];
   allPlayers: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPitcherUnassign?: (inning: number) => void;
   disabled: boolean;
+  highlightedPlayerId?: string | null;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -1145,7 +1158,7 @@ function PitcherBox({
             <div
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
-                isDragOver ? "ring-2 ring-red-400 bg-red-100" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
+                isDragOver ? "ring-2 ring-red-400 bg-red-100" : p && highlightedPlayerId && p.playerId === highlightedPlayerId ? "bg-blue-200 ring-1 ring-blue-400 font-bold" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1238,6 +1251,7 @@ function PositionBox({
   onPositionUnassign,
   disabled,
   heldInnings,
+  highlightedPlayerId,
 }: {
   position: string;
   players: ({ inning: number; playerId: string; name: string } | null)[];
@@ -1250,6 +1264,7 @@ function PositionBox({
   onPositionUnassign?: (inning: number, position: string) => void;
   disabled?: boolean;
   heldInnings?: Set<number>;
+  highlightedPlayerId?: string | null;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -1291,7 +1306,7 @@ function PositionBox({
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
                 isEditing ? "" : p
-                  ? `${isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
+                  ? `${highlightedPlayerId && p.playerId === highlightedPlayerId ? "bg-blue-200 ring-1 ring-blue-400 font-bold" : isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
                   : "bg-gray-50"
               } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
               draggable={!isLocked && !!p && !isEditing}
