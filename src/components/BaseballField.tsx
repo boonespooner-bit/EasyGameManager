@@ -110,6 +110,9 @@ export default function BaseballField({
   const [showSitModal, setShowSitModal] = useState(false);
   const [skippedSwaps, setSkippedSwaps] = useState<Set<string>>(new Set());
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
+  const [benchEditingInning, setBenchEditingInning] = useState<number | null>(null);
+  const [benchEditingPlayerId, setBenchEditingPlayerId] = useState<string | null>(null);
+  const [benchSearch, setBenchSearch] = useState("");
 
   // Players who have not sat (no BENCH assignment) at all in the game
   const notSatPlayers = useMemo(() => {
@@ -810,6 +813,16 @@ export default function BaseballField({
             <div className="grid grid-cols-6 gap-2">
               {getBenchByInning().map(({ inning, players }) => {
                 const benchHeld = heldPositions?.some((h) => h.position === "BENCH" && h.inning === inning);
+                const isBenchEditing = benchEditingInning === inning;
+                const canEditBench = !isLocked && !!allPlayers && !!onPositionChange;
+                const benchFiltered = isBenchEditing
+                  ? (benchSearch.trim()
+                    ? (allPlayers || []).filter((p) => {
+                        const s = benchSearch.toLowerCase();
+                        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
+                      })
+                    : allPlayers || [])
+                  : [];
                 return (
                   <div
                     key={inning}
@@ -824,10 +837,42 @@ export default function BaseballField({
                       );
                       const benchColor = benchColorMap[p.playerId];
                       const isConsecutive = consecutiveBenchSet.has(p.playerId);
-                      return (
+                      const isBenchPlayerEditing = isBenchEditing && benchEditingPlayerId === p.playerId;
+                      return isBenchPlayerEditing ? (
+                        <div key={p.playerId} className="relative mb-0.5">
+                          <input
+                            type="text"
+                            value={benchSearch}
+                            onChange={(e) => setBenchSearch(e.target.value)}
+                            onBlur={() => setTimeout(() => { setBenchEditingInning(null); setBenchEditingPlayerId(null); setBenchSearch(""); }, 150)}
+                            className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded outline-none"
+                            placeholder="Type name..."
+                            autoFocus
+                          />
+                          <div className="absolute top-full left-0 bg-white border border-gray-300 rounded shadow-lg max-h-40 overflow-y-auto mt-0.5 min-w-[120px]" style={{ zIndex: 9999 }}>
+                            {benchFiltered.map((pl) => (
+                              <button
+                                key={pl.id}
+                                className="block w-full text-left text-xs px-2 py-1 hover:bg-blue-50 truncate"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onPositionChange?.(inning, "BENCH", pl.id);
+                                  setBenchEditingInning(null);
+                                  setBenchEditingPlayerId(null);
+                                  setBenchSearch("");
+                                }}
+                              >
+                                {pl.firstName || pl.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
                         <div
                           key={p.playerId}
-                          className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing ${
+                          className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate ${
+                            canEditBench ? "cursor-pointer hover:ring-1 hover:ring-blue-300" : "cursor-grab active:cursor-grabbing"
+                          } ${
                             highlightedPlayerId && p.playerId === highlightedPlayerId
                               ? "bg-blue-200 border-blue-400 font-bold ring-1 ring-blue-400"
                               : isConsecutive
@@ -838,10 +883,17 @@ export default function BaseballField({
                                     ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
                                     : "bg-white"
                           }`}
-                          draggable={!isLocked}
+                          draggable={!isLocked && !canEditBench}
                           onDragStart={() => handleDragStart("BENCH", inning)}
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => { e.stopPropagation(); handleDrop("BENCH", inning); }}
+                          onClick={() => {
+                            if (canEditBench) {
+                              setBenchEditingInning(inning);
+                              setBenchEditingPlayerId(p.playerId);
+                              setBenchSearch("");
+                            }
+                          }}
                         >
                           {isPlayerHeld && <span className="text-amber-500 text-[8px]">&#128274;</span>}
                           {p.name}
