@@ -48,6 +48,8 @@ interface GameData {
   gameBalls?: { id: string; playerId: string; reason: string }[];
   heldPositions?: { playerId: string; inning: number; position: string }[];
   previousGameBench?: { date: string; opponent: string; players: string[] } | null;
+  previousGameBenchTotals?: { playerName: string; count: number }[];
+  seasonBenchTotals?: { playerName: string; count: number }[];
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
@@ -1249,6 +1251,8 @@ export default function GamePlanPage() {
         onGameBallUpdate={handleGameBallUpdate}
         onGameBallRemove={handleGameBallRemove}
         previousGameBench={game.previousGameBench}
+        previousGameBenchTotals={game.previousGameBenchTotals}
+        seasonBenchTotals={game.seasonBenchTotals}
         sandlotRules={game.sandlotRules}
         extraOutfielder={game.extraOutfielder}
         disabledPositions={game.disabledPositions}

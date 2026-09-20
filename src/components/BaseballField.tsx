@@ -47,6 +47,8 @@ interface Props {
   onGameBallUpdate?: (playerId: string, reason: string, id?: string) => void;
   onGameBallRemove?: (id: string) => void;
   previousGameBench?: { date: string; opponent: string; players: string[] } | null;
+  previousGameBenchTotals?: { playerName: string; count: number }[];
+  seasonBenchTotals?: { playerName: string; count: number }[];
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
@@ -88,6 +90,8 @@ export default function BaseballField({
   onGameBallUpdate,
   onGameBallRemove,
   previousGameBench,
+  previousGameBenchTotals = [],
+  seasonBenchTotals = [],
   extraOutfielder = false,
   disabledPositions = [],
 }: Props) {
@@ -1062,6 +1066,29 @@ export default function BaseballField({
                   </span>
                 </div>
                 <div className="mt-0.5">{previousGameBench.players.join(", ")}</div>
+              </div>
+            )}
+            {previousGameBenchTotals.length > 0 && (
+              <div className="no-print mt-2 inline-block bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-900">
+                <div className="font-semibold text-amber-800">
+                  Last game bench totals
+                  {previousGameBench && (
+                    <span className="font-normal text-amber-700">
+                      {" "}— vs {previousGameBench.opponent}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5">
+                  {previousGameBenchTotals.map((p) => `${p.playerName}: ${p.count}`).join(", ")}
+                </div>
+              </div>
+            )}
+            {seasonBenchTotals.length > 0 && (
+              <div className="no-print mt-2 inline-block bg-purple-50 border border-purple-200 rounded px-3 py-2 text-xs text-purple-900">
+                <div className="font-semibold text-purple-800">Season bench totals</div>
+                <div className="mt-0.5">
+                  {seasonBenchTotals.map((p) => `${p.playerName}: ${p.count}`).join(", ")}
+                </div>
               </div>
             )}
           </div>
