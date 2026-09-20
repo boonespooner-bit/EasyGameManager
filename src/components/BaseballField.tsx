@@ -111,6 +111,7 @@ export default function BaseballField({
   const [skippedSwaps, setSkippedSwaps] = useState<Set<string>>(new Set());
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
   const [highlightedInning, setHighlightedInning] = useState<number | null>(null);
+  const [showTableView, setShowTableView] = useState(false);
   const [benchEditingInning, setBenchEditingInning] = useState<number | null>(null);
   const [benchEditingPlayerId, setBenchEditingPlayerId] = useState<string | null>(null);
   const [benchSearch, setBenchSearch] = useState("");
@@ -726,10 +727,92 @@ export default function BaseballField({
         </div>
       )}
 
-      {!isLocked && (
+      <div className="no-print flex justify-center mb-3">
+        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+          <button
+            onClick={() => setShowTableView(false)}
+            className={`px-3 py-1 text-sm font-medium transition-colors ${!showTableView ? "bg-green-700 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+          >
+            Field View
+          </button>
+          <button
+            onClick={() => setShowTableView(true)}
+            className={`px-3 py-1 text-sm font-medium transition-colors ${showTableView ? "bg-green-700 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+          >
+            Table View
+          </button>
+        </div>
+      </div>
+
+      {!isLocked && !showTableView && (
         <p className="no-print text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
       )}
 
+      {showTableView ? (
+        <div className="no-print">
+          <table className="w-full border-collapse border border-gray-300 text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">#</th>
+                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Player</th>
+                {INNINGS.map((inn) => (
+                  <th
+                    key={inn}
+                    className={`border border-gray-300 px-3 py-2 text-center font-semibold cursor-pointer transition-colors ${
+                      highlightedInning === inn
+                        ? "bg-orange-200 text-orange-900"
+                        : "text-gray-700 hover:bg-orange-50"
+                    }`}
+                    onClick={() => { setHighlightedInning(highlightedInning === inn ? null : inn); setHighlightedPlayerId(null); }}
+                  >
+                    Inn {inn}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {battingOrder.map((b, idx) => {
+                const isRowHighlighted = highlightedPlayerId === b.playerId;
+                return (
+                  <tr
+                    key={b.playerId}
+                    className={`${isRowHighlighted ? "bg-orange-100" : idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
+                  >
+                    <td className={`border border-gray-300 px-3 py-1.5 text-center text-gray-400 font-bold ${isRowHighlighted ? "bg-orange-100" : ""}`}>
+                      {b.order}
+                    </td>
+                    <td
+                      className={`border border-gray-300 px-3 py-1.5 font-medium cursor-pointer hover:text-orange-700 transition-colors ${isRowHighlighted ? "bg-orange-100 text-orange-900" : "text-gray-900"}`}
+                      onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
+                    >
+                      {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
+                    </td>
+                    {INNINGS.map((inn) => {
+                      const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
+                      const pos = assignment ? (assignment.position === "BENCH" ? "BN" : assignment.position) : "—";
+                      const isCellHighlighted = isRowHighlighted || highlightedInning === inn;
+                      return (
+                        <td
+                          key={inn}
+                          className={`border border-gray-300 px-3 py-1.5 text-center font-mono text-sm ${
+                            isCellHighlighted
+                              ? "bg-orange-200 font-bold text-orange-900"
+                              : pos === "BN"
+                                ? "text-gray-400 italic"
+                                : "text-gray-700"
+                          }`}
+                        >
+                          {pos}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="no-print flex gap-6">
         {/* Field */}
         <div className="flex-1">
@@ -1094,6 +1177,7 @@ export default function BaseballField({
           </div>
         </div>
       </div>
+      )}
 
       {showSitModal && (
         <div className="no-print fixed inset-0 bg-black/40 flex items-center justify-center z-50">
