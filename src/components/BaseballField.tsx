@@ -435,7 +435,7 @@ export default function BaseballField({
   };
 
   return (
-    <div className="max-w-6xl mx-auto pb-40">
+    <div className="max-w-6xl mx-auto print:pb-0 pb-40">
       {/* Print-only field view (full game plan) */}
       <div className="print-only print-full hidden">
         <div style={{ textAlign: "center", marginBottom: "6px" }}>
@@ -635,6 +635,50 @@ export default function BaseballField({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Print-only table view */}
+      <div className="print-only print-table hidden">
+        <div style={{ textAlign: "center", marginBottom: "6px" }}>
+          <h1 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>
+            {teamName} vs. {opponent}
+          </h1>
+          <p style={{ fontSize: "11px", color: "#555", margin: "2px 0" }}>
+            {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
+          </p>
+        </div>
+        <table style={{ borderCollapse: "collapse", margin: "0 auto", fontSize: "12px" }}>
+          <thead>
+            <tr>
+              <th style={{ border: "1px solid #999", padding: "4px 8px", textAlign: "center", background: "#eee" }}>#</th>
+              <th style={{ border: "1px solid #999", padding: "4px 8px", textAlign: "left", background: "#eee" }}>Player</th>
+              {INNINGS.map((inn) => (
+                <th key={inn} style={{ border: "1px solid #999", padding: "4px 8px", textAlign: "center", background: "#eee" }}>
+                  Inn {inn}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {battingOrder.map((b, idx) => (
+              <tr key={b.playerId} style={{ background: idx % 2 === 0 ? "#fff" : "#f7f7f7" }}>
+                <td style={{ border: "1px solid #999", padding: "4px 8px", textAlign: "center", color: "#888", fontWeight: "bold" }}>{b.order}</td>
+                <td style={{ border: "1px solid #999", padding: "4px 8px", fontWeight: 500, whiteSpace: "nowrap" }}>
+                  {b.playerName}{b.jerseyNumber ? ` #${b.jerseyNumber}` : ""}
+                </td>
+                {INNINGS.map((inn) => {
+                  const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
+                  const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
+                  return (
+                    <td key={inn} style={{ border: "1px solid #999", padding: "4px 8px", textAlign: "center", fontFamily: "monospace", fontStyle: pos === "N" ? "italic" : "normal", color: pos === "N" ? "#999" : "#333" }}>
+                      {pos}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Screen-only content below */}
