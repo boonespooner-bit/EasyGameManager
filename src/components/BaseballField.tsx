@@ -749,7 +749,7 @@ export default function BaseballField({
       )}
 
       {showTableView ? (
-        <div className="no-print">
+        <div className="no-print flex justify-center mt-6">
           <table className="border-collapse border border-gray-300 text-sm">
             <thead>
               <tr className="bg-gray-100">
