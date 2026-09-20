@@ -37,7 +37,7 @@ interface Props {
   pitchingMode?: boolean;
   allPlayers?: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
-  onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  onPositionChange?: (inning: number, position: string, playerId: string, replacingPlayerId?: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
   onPitcherUnassign?: (inning: number) => void;
   regenerating?: boolean;
@@ -47,6 +47,8 @@ interface Props {
   onGameBallUpdate?: (playerId: string, reason: string, id?: string) => void;
   onGameBallRemove?: (id: string) => void;
   previousGameBench?: { date: string; opponent: string; players: string[] } | null;
+  previousGameBenchTotals?: { playerName: string; count: number }[];
+  seasonBenchTotals?: { playerName: string; count: number }[];
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
@@ -88,6 +90,8 @@ export default function BaseballField({
   onGameBallUpdate,
   onGameBallRemove,
   previousGameBench,
+  previousGameBenchTotals = [],
+  seasonBenchTotals = [],
   extraOutfielder = false,
   disabledPositions = [],
 }: Props) {
@@ -109,6 +113,12 @@ export default function BaseballField({
   const [gameBallReason, setGameBallReason] = useState("");
   const [showSitModal, setShowSitModal] = useState(false);
   const [skippedSwaps, setSkippedSwaps] = useState<Set<string>>(new Set());
+  const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
+  const [highlightedInning, setHighlightedInning] = useState<number | null>(null);
+  const [showTableView, setShowTableView] = useState(false);
+  const [benchEditingInning, setBenchEditingInning] = useState<number | null>(null);
+  const [benchEditingPlayerId, setBenchEditingPlayerId] = useState<string | null>(null);
+  const [benchSearch, setBenchSearch] = useState("");
 
   // Players who have not sat (no BENCH assignment) at all in the game
   const notSatPlayers = useMemo(() => {
@@ -425,7 +435,7 @@ export default function BaseballField({
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto print:pb-0 pb-40">
       {/* Print-only field view (full game plan) */}
       <div className="print-only print-full hidden">
         <div style={{ textAlign: "center", marginBottom: "6px" }}>
@@ -627,6 +637,50 @@ export default function BaseballField({
         </div>
       </div>
 
+      {/* Print-only table view */}
+      <div className="print-only print-table hidden">
+        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+          <h1 style={{ fontSize: "22px", fontWeight: "bold", margin: 0 }}>
+            {teamName} vs. {opponent}
+          </h1>
+          <p style={{ fontSize: "14px", color: "#555", margin: "4px 0" }}>
+            {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
+          </p>
+        </div>
+        <table style={{ borderCollapse: "collapse", margin: "0 auto", fontSize: "16px", width: "100%" }}>
+          <thead>
+            <tr>
+              <th style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", background: "#eee" }}>#</th>
+              <th style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "left", background: "#eee" }}>Player</th>
+              {INNINGS.map((inn) => (
+                <th key={inn} style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", background: "#eee" }}>
+                  Inn {inn}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {battingOrder.map((b, idx) => (
+              <tr key={b.playerId} style={{ background: idx % 2 === 0 ? "#fff" : "#f7f7f7" }}>
+                <td style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", color: "#888", fontWeight: "bold" }}>{b.order}</td>
+                <td style={{ border: "1px solid #999", padding: "8px 12px", fontWeight: 500, whiteSpace: "nowrap" }}>
+                  {b.playerName}{b.jerseyNumber ? ` #${b.jerseyNumber}` : ""}
+                </td>
+                {INNINGS.map((inn) => {
+                  const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
+                  const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
+                  return (
+                    <td key={inn} style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", fontFamily: "monospace", fontSize: "18px", fontStyle: pos === "N" ? "italic" : "normal", color: pos === "N" ? "#999" : "#333" }}>
+                      {pos}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {/* Screen-only content below */}
       {/* Title */}
       <div className="text-center mb-4 no-print">
@@ -721,10 +775,92 @@ export default function BaseballField({
         </div>
       )}
 
-      {!isLocked && (
+      <div className="no-print flex justify-center mb-3">
+        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+          <button
+            onClick={() => setShowTableView(false)}
+            className={`px-3 py-1 text-sm font-medium transition-colors ${!showTableView ? "bg-green-700 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+          >
+            Field View
+          </button>
+          <button
+            onClick={() => setShowTableView(true)}
+            className={`px-3 py-1 text-sm font-medium transition-colors ${showTableView ? "bg-green-700 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+          >
+            Table View
+          </button>
+        </div>
+      </div>
+
+      {!isLocked && !showTableView && (
         <p className="no-print text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
       )}
 
+      {showTableView ? (
+        <div className="no-print flex justify-center mt-6">
+          <table className="border-collapse border border-gray-300 text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold text-gray-700 w-8">#</th>
+                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap">Player</th>
+                {INNINGS.map((inn) => (
+                  <th
+                    key={inn}
+                    className={`border border-gray-300 px-3 py-2 text-center font-semibold cursor-pointer transition-colors ${
+                      highlightedInning === inn
+                        ? "bg-orange-200 text-orange-900"
+                        : "text-gray-700 hover:bg-orange-50"
+                    }`}
+                    onClick={() => { setHighlightedInning(highlightedInning === inn ? null : inn); setHighlightedPlayerId(null); }}
+                  >
+                    Inn {inn}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {battingOrder.map((b, idx) => {
+                const isRowHighlighted = highlightedPlayerId === b.playerId;
+                return (
+                  <tr
+                    key={b.playerId}
+                    className={`${isRowHighlighted ? "bg-orange-100" : idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
+                  >
+                    <td className={`border border-gray-300 px-2 py-1.5 text-center text-gray-400 font-bold w-8 ${isRowHighlighted ? "bg-orange-100" : ""}`}>
+                      {b.order}
+                    </td>
+                    <td
+                      className={`border border-gray-300 px-3 py-1.5 font-medium cursor-pointer hover:text-orange-700 transition-colors whitespace-nowrap ${isRowHighlighted ? "bg-orange-100 text-orange-900" : "text-gray-900"}`}
+                      onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
+                    >
+                      {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
+                    </td>
+                    {INNINGS.map((inn) => {
+                      const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
+                      const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
+                      const isCellHighlighted = isRowHighlighted || highlightedInning === inn;
+                      return (
+                        <td
+                          key={inn}
+                          className={`border border-gray-300 px-3 py-1.5 text-center font-mono text-sm ${
+                            isCellHighlighted
+                              ? "bg-orange-200 font-bold text-orange-900"
+                              : pos === "N"
+                                ? "text-gray-400 italic"
+                                : "text-gray-700"
+                          }`}
+                        >
+                          {pos}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="no-print flex gap-6">
         {/* Field */}
         <div className="flex-1">
@@ -780,6 +916,8 @@ export default function BaseballField({
                       onPitcherChange={onPitcherChange}
                       onPitcherUnassign={onPitcherUnassign}
                       disabled={!!regenerating}
+                      highlightedPlayerId={highlightedPlayerId}
+                      highlightedInning={highlightedInning}
                     />
                   ) : (
                     <PositionBox
@@ -794,6 +932,8 @@ export default function BaseballField({
                       onPositionUnassign={onPositionUnassign}
                       disabled={regenerating}
                       heldInnings={heldInningsForPos}
+                      highlightedPlayerId={highlightedPlayerId}
+                      highlightedInning={highlightedInning}
                     />
                   )}
                 </div>
@@ -807,6 +947,16 @@ export default function BaseballField({
             <div className="grid grid-cols-6 gap-2">
               {getBenchByInning().map(({ inning, players }) => {
                 const benchHeld = heldPositions?.some((h) => h.position === "BENCH" && h.inning === inning);
+                const isBenchEditing = benchEditingInning === inning;
+                const canEditBench = !isLocked && !!allPlayers && !!onPositionChange;
+                const benchFiltered = isBenchEditing
+                  ? (benchSearch.trim()
+                    ? (allPlayers || []).filter((p) => {
+                        const s = benchSearch.toLowerCase();
+                        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
+                      })
+                    : allPlayers || [])
+                  : [];
                 return (
                   <div
                     key={inning}
@@ -814,29 +964,79 @@ export default function BaseballField({
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => handleDrop("BENCH", inning)}
                   >
-                    <div className="text-xs font-bold text-gray-500 mb-1">Inn {inning}</div>
+                    <button
+                      className={`text-xs font-bold mb-1 rounded px-1 transition-colors ${
+                        highlightedInning === inning
+                          ? "bg-orange-200 text-orange-800 ring-1 ring-orange-400"
+                          : "text-gray-500 hover:text-orange-600 hover:bg-orange-50"
+                      }`}
+                      onClick={() => { setHighlightedInning(highlightedInning === inning ? null : inning); setHighlightedPlayerId(null); }}
+                    >
+                      Inn {inning}
+                    </button>
                     {players.map((p) => {
                       const isPlayerHeld = heldPositions?.some(
                         (h) => h.position === "BENCH" && h.inning === inning && h.playerId === p.playerId,
                       );
                       const benchColor = benchColorMap[p.playerId];
                       const isConsecutive = consecutiveBenchSet.has(p.playerId);
-                      return (
+                      const isBenchPlayerEditing = isBenchEditing && benchEditingPlayerId === p.playerId;
+                      return isBenchPlayerEditing ? (
+                        <div key={p.playerId} className="relative mb-0.5">
+                          <input
+                            type="text"
+                            value={benchSearch}
+                            onChange={(e) => setBenchSearch(e.target.value)}
+                            onBlur={() => setTimeout(() => { setBenchEditingInning(null); setBenchEditingPlayerId(null); setBenchSearch(""); }, 150)}
+                            className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded outline-none"
+                            placeholder="Type name..."
+                            autoFocus
+                          />
+                          <div className="absolute top-full left-0 bg-white border border-gray-300 rounded shadow-lg max-h-40 overflow-y-auto mt-0.5 min-w-[120px]" style={{ zIndex: 9999 }}>
+                            {benchFiltered.map((pl) => (
+                              <button
+                                key={pl.id}
+                                className="block w-full text-left text-xs px-2 py-1 hover:bg-blue-50 truncate"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onPositionChange?.(inning, "BENCH", pl.id, p.playerId);
+                                  setBenchEditingInning(null);
+                                  setBenchEditingPlayerId(null);
+                                  setBenchSearch("");
+                                }}
+                              >
+                                {pl.firstName || pl.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
                         <div
                           key={p.playerId}
-                          className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate cursor-grab active:cursor-grabbing ${
-                            isConsecutive
-                              ? "bg-red-100 border-red-400 text-red-800 font-bold animate-pulse"
-                              : isPlayerHeld
-                                ? "bg-amber-50 border-amber-300"
-                                : benchColor
-                                  ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
-                                  : "bg-white"
+                          className={`text-xs rounded px-1 py-0.5 mb-0.5 border truncate ${
+                            canEditBench ? "cursor-pointer hover:ring-1 hover:ring-blue-300" : "cursor-grab active:cursor-grabbing"
+                          } ${
+                            (highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning)
+                              ? "bg-orange-200 border-orange-400 font-bold ring-1 ring-orange-400"
+                              : isConsecutive
+                                ? "bg-red-100 border-red-400 text-red-800 font-bold animate-pulse"
+                                : isPlayerHeld
+                                  ? "bg-amber-50 border-amber-300"
+                                  : benchColor
+                                    ? `${benchColor.bg} ${benchColor.border} ${benchColor.text} font-medium`
+                                    : "bg-white"
                           }`}
-                          draggable={!isLocked}
+                          draggable={!isLocked && !canEditBench}
                           onDragStart={() => handleDragStart("BENCH", inning)}
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => { e.stopPropagation(); handleDrop("BENCH", inning); }}
+                          onClick={() => {
+                            if (canEditBench) {
+                              setBenchEditingInning(inning);
+                              setBenchEditingPlayerId(p.playerId);
+                              setBenchSearch("");
+                            }
+                          }}
                         >
                           {isPlayerHeld && <span className="text-amber-500 text-[8px]">&#128274;</span>}
                           {p.name}
@@ -912,6 +1112,29 @@ export default function BaseballField({
                 <div className="mt-0.5">{previousGameBench.players.join(", ")}</div>
               </div>
             )}
+            {previousGameBenchTotals.length > 0 && (
+              <div className="no-print mt-2 inline-block bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-900">
+                <div className="font-semibold text-amber-800">
+                  Last game bench totals
+                  {previousGameBench && (
+                    <span className="font-normal text-amber-700">
+                      {" "}— vs {previousGameBench.opponent}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5">
+                  {previousGameBenchTotals.map((p) => `${p.playerName}: ${p.count}`).join(", ")}
+                </div>
+              </div>
+            )}
+            {seasonBenchTotals.length > 0 && (
+              <div className="no-print mt-2 inline-block bg-purple-50 border border-purple-200 rounded px-3 py-2 text-xs text-purple-900">
+                <div className="font-semibold text-purple-800">Season bench totals</div>
+                <div className="mt-0.5">
+                  {seasonBenchTotals.map((p) => `${p.playerName}: ${p.count}`).join(", ")}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Game Balls */}
@@ -977,7 +1200,7 @@ export default function BaseballField({
         </div>
 
         {/* Batting Order */}
-        <div className="w-48">
+        <div className="w-48 min-w-fit">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Batting Order</h3>
           {!isLocked && onBattingOrderUpdate && (
             <p className="text-xs text-gray-400 mb-1">Drag to reorder</p>
@@ -989,7 +1212,8 @@ export default function BaseballField({
                 className={`flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0 transition-colors ${
                   !isLocked && onBattingOrderUpdate ? "cursor-grab active:cursor-grabbing" : ""
                 } ${battingDragOverIndex === idx ? "bg-blue-50 border-t-2 border-t-blue-400" : "hover:bg-gray-50"
-                } ${battingDragIndex === idx ? "opacity-40" : ""}`}
+                } ${battingDragIndex === idx ? "opacity-40" : ""
+                } ${highlightedPlayerId === b.playerId ? "bg-orange-100 ring-2 ring-orange-400" : ""}`}
                 draggable={!isLocked && !!onBattingOrderUpdate}
                 onDragStart={(e) => {
                   setBattingDragIndex(idx);
@@ -1013,12 +1237,18 @@ export default function BaseballField({
               >
                 <span className="text-gray-300 text-lg leading-none select-none mr-1">&#8801;</span>
                 <span className="text-xs font-bold text-gray-400 w-4">{b.order}</span>
-                <span className="text-sm">{b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}</span>
+                <button
+                  className="text-sm text-left cursor-pointer"
+                  onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
+                >
+                  {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
+                </button>
               </div>
             ))}
           </div>
         </div>
       </div>
+      )}
 
       {showSitModal && (
         <div className="no-print fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -1100,12 +1330,16 @@ function PitcherBox({
   onPitcherChange,
   onPitcherUnassign,
   disabled,
+  highlightedPlayerId,
+  highlightedInning,
 }: {
   players: ({ inning: number; playerId: string; name: string } | null)[];
   allPlayers: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
   onPitcherUnassign?: (inning: number) => void;
   disabled: boolean;
+  highlightedPlayerId?: string | null;
+  highlightedInning?: number | null;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -1145,7 +1379,7 @@ function PitcherBox({
             <div
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
-                isDragOver ? "ring-2 ring-red-400 bg-red-100" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
+                isDragOver ? "ring-2 ring-red-400 bg-red-100" : (p && highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1238,6 +1472,8 @@ function PositionBox({
   onPositionUnassign,
   disabled,
   heldInnings,
+  highlightedPlayerId,
+  highlightedInning,
 }: {
   position: string;
   players: ({ inning: number; playerId: string; name: string } | null)[];
@@ -1246,10 +1482,12 @@ function PositionBox({
   onDrop: (pos: string, inning: number) => void;
   isDragging: boolean;
   allPlayers?: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
-  onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  onPositionChange?: (inning: number, position: string, playerId: string, replacingPlayerId?: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
   disabled?: boolean;
   heldInnings?: Set<number>;
+  highlightedPlayerId?: string | null;
+  highlightedInning?: number | null;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -1291,7 +1529,7 @@ function PositionBox({
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
                 isEditing ? "" : p
-                  ? `${isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
+                  ? `${(highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
                   : "bg-gray-50"
               } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
               draggable={!isLocked && !!p && !isEditing}

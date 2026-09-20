@@ -15,17 +15,46 @@
     display: block !important;
   }
 
-  /* Batting-order-only print: hide full game plan, show batting print */
+  /* Default (no body class): show field only */
+  body:not(.print-batting):not(.print-table):not(.print-both) .print-only.print-batting {
+    display: none !important;
+  }
+  body:not(.print-batting):not(.print-table):not(.print-both) .print-only.print-table {
+    display: none !important;
+  }
+
+  /* print-table: show table only */
+  body.print-table .print-only.print-full {
+    display: none !important;
+  }
+  body.print-table .print-only.print-batting {
+    display: none !important;
+  }
+  body.print-table .print-only.print-table {
+    display: block !important;
+  }
+
+  /* print-both: show field + table, page break between */
+  body.print-both .print-only.print-batting {
+    display: none !important;
+  }
+  body.print-both .print-only.print-full {
+    display: block !important;
+  }
+  body.print-both .print-only.print-table {
+    display: block !important;
+    page-break-before: always;
+  }
+
+  /* print-batting: show batting order only (existing) */
   body.print-batting .print-only.print-full {
+    display: none !important;
+  }
+  body.print-batting .print-only.print-table {
     display: none !important;
   }
   body.print-batting .print-only.print-batting {
     display: block !important;
-  }
-
-  /* Full game plan print: hide batting-only section */
-  body:not(.print-batting) .print-only.print-batting {
-    display: none !important;
   }
 
   /* Reset page margins for 8.5x11 */

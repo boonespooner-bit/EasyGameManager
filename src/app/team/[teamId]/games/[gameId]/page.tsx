@@ -48,6 +48,8 @@ interface GameData {
   gameBalls?: { id: string; playerId: string; reason: string }[];
   heldPositions?: { playerId: string; inning: number; position: string }[];
   previousGameBench?: { date: string; opponent: string; players: string[] } | null;
+  previousGameBenchTotals?: { playerName: string; count: number }[];
+  seasonBenchTotals?: { playerName: string; count: number }[];
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
@@ -93,6 +95,7 @@ export default function GamePlanPage() {
   const [copying, setCopying] = useState(false);
   const [sandlotOpen, setSandlotOpen] = useState(false);
   const [savingSandlot, setSavingSandlot] = useState(false);
+  const [showPrintMenu, setShowPrintMenu] = useState(false);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -302,7 +305,7 @@ export default function GamePlanPage() {
   };
 
   // Handle any position change: add to held positions and regenerate
-  const handlePositionChange = async (inning: number, position: string, playerId: string) => {
+  const handlePositionChange = async (inning: number, position: string, playerId: string, replacingPlayerId?: string) => {
     // Check if the selected player is already assigned to a HELD position in this inning
     const playerCurrentAssignment = assignments.find(
       (a) => a.playerId === playerId && a.inning === inning && a.position !== position,
@@ -352,17 +355,21 @@ export default function GamePlanPage() {
       return;
     }
 
-    await executePositionChange(inning, position, playerId);
+    await executePositionChange(inning, position, playerId, replacingPlayerId);
   };
 
-  const executePositionChange = async (inning: number, position: string, playerId: string) => {
+  const executePositionChange = async (inning: number, position: string, playerId: string, replacingPlayerId?: string) => {
     // Direct swap: find where the selected player currently is, and who's at the target
     const playerCurrentAssignment = assignments.find(
       (a) => a.playerId === playerId && a.inning === inning,
     );
-    const targetAssignment = assignments.find(
-      (a) => a.position === position && a.inning === inning,
-    );
+    const targetAssignment = replacingPlayerId
+      ? assignments.find(
+          (a) => a.position === position && a.inning === inning && a.playerId === replacingPlayerId,
+        )
+      : assignments.find(
+          (a) => a.position === position && a.inning === inning,
+        );
 
     const updated = assignments.map((a) => {
       // Move selected player to target position
@@ -711,22 +718,40 @@ export default function GamePlanPage() {
               Clear Holds ({heldPositions.length})
             </button>
           )}
-          <button
-            onClick={() => window.print()}
-            className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors no-print"
-          >
-            Print Game Plan
-          </button>
-          <button
-            onClick={() => {
-              document.body.classList.add("print-batting");
-              window.print();
-              document.body.classList.remove("print-batting");
-            }}
-            className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors no-print"
-          >
-            Print Batting Order
-          </button>
+          <div className="relative no-print">
+            <button
+              onClick={() => setShowPrintMenu(!showPrintMenu)}
+              className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              Print
+            </button>
+            {showPrintMenu && (
+              <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowPrintMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px]">
+                {[
+                  { label: "Both (2 pages)", mode: "print-both" },
+                  { label: "Field View", mode: "" },
+                  { label: "Table View", mode: "print-table" },
+                  { label: "Batting Order", mode: "print-batting" },
+                ].map(({ label, mode }) => (
+                  <button
+                    key={label}
+                    className="block w-full text-left text-sm px-4 py-2 hover:bg-gray-100 first:rounded-t-lg last:rounded-b-lg"
+                    onClick={() => {
+                      setShowPrintMenu(false);
+                      if (mode) document.body.classList.add(mode);
+                      window.print();
+                      if (mode) document.body.classList.remove(mode);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              </>
+            )}
+          </div>
           {!game.isLocked && (
             <button
               onClick={() => setRosterOpen(!rosterOpen)}
@@ -1245,6 +1270,8 @@ export default function GamePlanPage() {
         onGameBallUpdate={handleGameBallUpdate}
         onGameBallRemove={handleGameBallRemove}
         previousGameBench={game.previousGameBench}
+        previousGameBenchTotals={game.previousGameBenchTotals}
+        seasonBenchTotals={game.seasonBenchTotals}
         sandlotRules={game.sandlotRules}
         extraOutfielder={game.extraOutfielder}
         disabledPositions={game.disabledPositions}

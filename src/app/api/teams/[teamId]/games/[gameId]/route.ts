@@ -111,6 +111,63 @@ export async function GET(
     // Defensive: don't break the page if the query fails
   }
 
+  // Previous game: bench totals per player (all innings)
+  let previousGameBenchTotals: { playerName: string; count: number }[] = [];
+  try {
+    const prevGameFull = await prisma.game.findFirst({
+      where: {
+        teamId: game.teamId,
+        date: { lt: game.date },
+        id: { not: game.id },
+      },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      include: {
+        innings: {
+          where: { position: "BENCH" },
+          include: { player: { select: { name: true, firstName: true } } },
+        },
+      },
+    });
+    if (prevGameFull) {
+      const counts = new Map<string, { playerName: string; count: number }>();
+      for (const i of prevGameFull.innings) {
+        const playerName = i.player.firstName || i.player.name.split(" ")[0];
+        const entry = counts.get(i.playerId) || { playerName, count: 0 };
+        entry.count++;
+        counts.set(i.playerId, entry);
+      }
+      previousGameBenchTotals = Array.from(counts.values()).sort((a, b) => b.count - a.count);
+    }
+  } catch {
+    // Defensive
+  }
+
+  // Season bench totals: across all games before this one
+  let seasonBenchTotals: { playerName: string; count: number }[] = [];
+  try {
+    const priorBenchAssignments = await prisma.inningAssignment.findMany({
+      where: {
+        position: "BENCH",
+        game: {
+          teamId: game.teamId,
+          date: { lt: game.date },
+          id: { not: game.id },
+        },
+      },
+      include: { player: { select: { id: true, name: true, firstName: true } } },
+    });
+    const counts = new Map<string, { playerName: string; count: number }>();
+    for (const a of priorBenchAssignments) {
+      const playerName = a.player.firstName || a.player.name.split(" ")[0];
+      const entry = counts.get(a.player.id) || { playerName, count: 0 };
+      entry.count++;
+      counts.set(a.player.id, entry);
+    }
+    seasonBenchTotals = Array.from(counts.values()).sort((a, b) => b.count - a.count);
+  } catch {
+    // Defensive
+  }
+
   return NextResponse.json({
     ...game,
     team: { ...game.team, players: filteredPlayers },
@@ -123,6 +180,8 @@ export async function GET(
     extraOutfielder: (game as unknown as { extraOutfielder?: boolean }).extraOutfielder ?? false,
     disabledPositions: (game as unknown as { disabledPositions?: string[] }).disabledPositions ?? [],
     previousGameBench,
+    previousGameBenchTotals,
+    seasonBenchTotals,
   });
 }
 

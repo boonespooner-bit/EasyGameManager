@@ -250,7 +250,7 @@ describe("buildImportPlan", () => {
 
   it("defaults hasPitched to false when missing", () => {
     const exportData = buildExportData(makeDbTeam());
-    delete (exportData.team.players[1] as Record<string, unknown>).hasPitched;
+    delete (exportData.team.players[1] as unknown as Record<string, unknown>).hasPitched;
     const plan = buildImportPlan(exportData);
     expect(plan.players[1].hasPitched).toBe(false);
   });
