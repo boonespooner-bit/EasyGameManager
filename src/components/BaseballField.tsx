@@ -37,7 +37,7 @@ interface Props {
   pitchingMode?: boolean;
   allPlayers?: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
   onPitcherChange?: (inning: number, playerId: string) => void;
-  onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  onPositionChange?: (inning: number, position: string, playerId: string, replacingPlayerId?: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
   onPitcherUnassign?: (inning: number) => void;
   regenerating?: boolean;
@@ -868,7 +868,7 @@ export default function BaseballField({
                                 className="block w-full text-left text-xs px-2 py-1 hover:bg-blue-50 truncate"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
-                                  onPositionChange?.(inning, "BENCH", pl.id);
+                                  onPositionChange?.(inning, "BENCH", pl.id, p.playerId);
                                   setBenchEditingInning(null);
                                   setBenchEditingPlayerId(null);
                                   setBenchSearch("");
@@ -1327,7 +1327,7 @@ function PositionBox({
   onDrop: (pos: string, inning: number) => void;
   isDragging: boolean;
   allPlayers?: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
-  onPositionChange?: (inning: number, position: string, playerId: string) => void;
+  onPositionChange?: (inning: number, position: string, playerId: string, replacingPlayerId?: string) => void;
   onPositionUnassign?: (inning: number, position: string) => void;
   disabled?: boolean;
   heldInnings?: Set<number>;

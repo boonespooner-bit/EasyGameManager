@@ -302,7 +302,7 @@ export default function GamePlanPage() {
   };
 
   // Handle any position change: add to held positions and regenerate
-  const handlePositionChange = async (inning: number, position: string, playerId: string) => {
+  const handlePositionChange = async (inning: number, position: string, playerId: string, replacingPlayerId?: string) => {
     // Check if the selected player is already assigned to a HELD position in this inning
     const playerCurrentAssignment = assignments.find(
       (a) => a.playerId === playerId && a.inning === inning && a.position !== position,
@@ -352,17 +352,21 @@ export default function GamePlanPage() {
       return;
     }
 
-    await executePositionChange(inning, position, playerId);
+    await executePositionChange(inning, position, playerId, replacingPlayerId);
   };
 
-  const executePositionChange = async (inning: number, position: string, playerId: string) => {
+  const executePositionChange = async (inning: number, position: string, playerId: string, replacingPlayerId?: string) => {
     // Direct swap: find where the selected player currently is, and who's at the target
     const playerCurrentAssignment = assignments.find(
       (a) => a.playerId === playerId && a.inning === inning,
     );
-    const targetAssignment = assignments.find(
-      (a) => a.position === position && a.inning === inning,
-    );
+    const targetAssignment = replacingPlayerId
+      ? assignments.find(
+          (a) => a.position === position && a.inning === inning && a.playerId === replacingPlayerId,
+        )
+      : assignments.find(
+          (a) => a.position === position && a.inning === inning,
+        );
 
     const updated = assignments.map((a) => {
       // Move selected player to target position
