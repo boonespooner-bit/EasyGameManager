@@ -836,8 +836,8 @@ export default function BaseballField({
                     <button
                       className={`text-xs font-bold mb-1 rounded px-1 transition-colors ${
                         highlightedInning === inning
-                          ? "bg-blue-200 text-blue-800 ring-1 ring-blue-400"
-                          : "text-gray-500 hover:text-blue-600 hover:bg-blue-50"
+                          ? "bg-orange-200 text-orange-800 ring-1 ring-orange-400"
+                          : "text-gray-500 hover:text-orange-600 hover:bg-orange-50"
                       }`}
                       onClick={() => { setHighlightedInning(highlightedInning === inning ? null : inning); setHighlightedPlayerId(null); }}
                     >
@@ -886,7 +886,7 @@ export default function BaseballField({
                             canEditBench ? "cursor-pointer hover:ring-1 hover:ring-blue-300" : "cursor-grab active:cursor-grabbing"
                           } ${
                             (highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning)
-                              ? "bg-blue-200 border-blue-400 font-bold ring-1 ring-blue-400"
+                              ? "bg-orange-200 border-orange-400 font-bold ring-1 ring-orange-400"
                               : isConsecutive
                                 ? "bg-red-100 border-red-400 text-red-800 font-bold animate-pulse"
                                 : isPlayerHeld
@@ -1059,7 +1059,7 @@ export default function BaseballField({
                   !isLocked && onBattingOrderUpdate ? "cursor-grab active:cursor-grabbing" : ""
                 } ${battingDragOverIndex === idx ? "bg-blue-50 border-t-2 border-t-blue-400" : "hover:bg-gray-50"
                 } ${battingDragIndex === idx ? "opacity-40" : ""
-                } ${highlightedPlayerId === b.playerId ? "bg-blue-100 ring-2 ring-blue-400" : ""}`}
+                } ${highlightedPlayerId === b.playerId ? "bg-orange-100 ring-2 ring-orange-400" : ""}`}
                 draggable={!isLocked && !!onBattingOrderUpdate}
                 onDragStart={(e) => {
                   setBattingDragIndex(idx);
@@ -1224,7 +1224,7 @@ function PitcherBox({
             <div
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
-                isDragOver ? "ring-2 ring-red-400 bg-red-100" : (p && highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-blue-200 ring-1 ring-blue-400 font-bold" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
+                isDragOver ? "ring-2 ring-red-400 bg-red-100" : (p && highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1374,7 +1374,7 @@ function PositionBox({
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
                 isEditing ? "" : p
-                  ? `${(highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-blue-200 ring-1 ring-blue-400 font-bold" : isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
+                  ? `${(highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
                   : "bg-gray-50"
               } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
               draggable={!isLocked && !!p && !isEditing}
