@@ -431,7 +431,7 @@ export default function BaseballField({
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto pb-40">
       {/* Print-only field view (full game plan) */}
       <div className="print-only print-full hidden">
         <div style={{ textAlign: "center", marginBottom: "6px" }}>
@@ -750,11 +750,11 @@ export default function BaseballField({
 
       {showTableView ? (
         <div className="no-print">
-          <table className="w-full border-collapse border border-gray-300 text-sm">
+          <table className="border-collapse border border-gray-300 text-sm">
             <thead>
               <tr className="bg-gray-100">
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">#</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Player</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold text-gray-700 w-8">#</th>
+                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap">Player</th>
                 {INNINGS.map((inn) => (
                   <th
                     key={inn}
@@ -778,18 +778,18 @@ export default function BaseballField({
                     key={b.playerId}
                     className={`${isRowHighlighted ? "bg-orange-100" : idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
                   >
-                    <td className={`border border-gray-300 px-3 py-1.5 text-center text-gray-400 font-bold ${isRowHighlighted ? "bg-orange-100" : ""}`}>
+                    <td className={`border border-gray-300 px-2 py-1.5 text-center text-gray-400 font-bold w-8 ${isRowHighlighted ? "bg-orange-100" : ""}`}>
                       {b.order}
                     </td>
                     <td
-                      className={`border border-gray-300 px-3 py-1.5 font-medium cursor-pointer hover:text-orange-700 transition-colors ${isRowHighlighted ? "bg-orange-100 text-orange-900" : "text-gray-900"}`}
+                      className={`border border-gray-300 px-3 py-1.5 font-medium cursor-pointer hover:text-orange-700 transition-colors whitespace-nowrap ${isRowHighlighted ? "bg-orange-100 text-orange-900" : "text-gray-900"}`}
                       onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
                     >
                       {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
                     </td>
                     {INNINGS.map((inn) => {
                       const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
-                      const pos = assignment ? (assignment.position === "BENCH" ? "BN" : assignment.position) : "—";
+                      const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
                       const isCellHighlighted = isRowHighlighted || highlightedInning === inn;
                       return (
                         <td
@@ -797,7 +797,7 @@ export default function BaseballField({
                           className={`border border-gray-300 px-3 py-1.5 text-center font-mono text-sm ${
                             isCellHighlighted
                               ? "bg-orange-200 font-bold text-orange-900"
-                              : pos === "BN"
+                              : pos === "N"
                                 ? "text-gray-400 italic"
                                 : "text-gray-700"
                           }`}
