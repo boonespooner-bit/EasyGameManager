@@ -116,6 +116,7 @@ export default function BaseballField({
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
   const [highlightedInning, setHighlightedInning] = useState<number | null>(null);
   const [showTableView, setShowTableView] = useState(false);
+  const [tableEditingCell, setTableEditingCell] = useState<{ playerId: string; inning: number } | null>(null);
   const [benchEditingInning, setBenchEditingInning] = useState<number | null>(null);
   const [benchEditingPlayerId, setBenchEditingPlayerId] = useState<string | null>(null);
   const [benchSearch, setBenchSearch] = useState("");
@@ -839,18 +840,58 @@ export default function BaseballField({
                       const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
                       const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
                       const isCellHighlighted = isRowHighlighted || highlightedInning === inn;
+                      const isCellEditing = tableEditingCell?.playerId === b.playerId && tableEditingCell?.inning === inn;
+                      const canEditTable = !isLocked && !!onPositionChange;
                       return (
                         <td
                           key={inn}
-                          className={`border border-gray-300 px-3 py-1.5 text-center font-mono text-sm ${
+                          className={`border border-gray-300 px-3 py-1.5 text-center font-mono text-sm relative ${
+                            canEditTable ? "cursor-pointer hover:ring-1 hover:ring-orange-300" : ""
+                          } ${
                             isCellHighlighted
                               ? "bg-orange-200 font-bold text-orange-900"
                               : pos === "N"
                                 ? "text-gray-400 italic"
                                 : "text-gray-700"
                           }`}
+                          onClick={() => {
+                            if (canEditTable && !isCellEditing) {
+                              setTableEditingCell({ playerId: b.playerId, inning: inn });
+                            }
+                          }}
                         >
-                          {pos}
+                          {isCellEditing ? (
+                            <div className="relative">
+                              <select
+                                className="text-xs border border-blue-300 rounded px-1 py-0.5 outline-none bg-white font-mono"
+                                autoFocus
+                                value={assignment?.position || ""}
+                                onChange={(e) => {
+                                  const newPos = e.target.value;
+                                  if (newPos && onPositionChange) {
+                                    const currentAssignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
+                                    if (newPos === "BENCH") {
+                                      onPositionChange(inn, "BENCH", b.playerId, currentAssignment?.playerId);
+                                    } else {
+                                      onPositionChange(inn, newPos, b.playerId);
+                                    }
+                                  }
+                                  setTableEditingCell(null);
+                                }}
+                                onBlur={() => setTableEditingCell(null)}
+                              >
+                                <option value="" disabled>—</option>
+                                {shownPositions
+                                  .filter((p) => !disabledSet.has(p))
+                                  .map((p) => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                <option value="BENCH">N</option>
+                              </select>
+                            </div>
+                          ) : (
+                            pos
+                          )}
                         </td>
                       );
                     })}
