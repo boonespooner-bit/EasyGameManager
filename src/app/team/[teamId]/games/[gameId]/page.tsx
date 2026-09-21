@@ -501,7 +501,11 @@ export default function GamePlanPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, playerId }),
     });
-    setHeldPositions([]);
+    if (action === "exclude") {
+      const surviving = heldPositions.filter((h) => h.playerId !== playerId);
+      setHeldPositions(surviving);
+      saveHeldPositions(surviving);
+    }
     await fetchGame();
     setRosterUpdating(null);
   };
@@ -519,7 +523,6 @@ export default function GamePlanPage() {
     POSITIONS.forEach((p) => (r[p] = 5));
     setPoolRatings(r);
     setShowPoolForm(false);
-    setHeldPositions([]);
     await fetchGame();
     setRosterUpdating(null);
   };
@@ -531,7 +534,9 @@ export default function GamePlanPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "removePool", playerId }),
     });
-    setHeldPositions([]);
+    const surviving = heldPositions.filter((h) => h.playerId !== playerId);
+    setHeldPositions(surviving);
+    saveHeldPositions(surviving);
     await fetchGame();
     setRosterUpdating(null);
   };
