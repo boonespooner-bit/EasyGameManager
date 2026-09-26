@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { activePositionsFor } from "@/types";
+import { activePositionsFor, getInningsArray } from "@/types";
 
 describe("activePositionsFor", () => {
   it("returns 9 standard positions by default", () => {
@@ -27,5 +27,19 @@ describe("activePositionsFor", () => {
     expect(positions).not.toContain("LCF");
     expect(positions).toContain("RCF");
     expect(positions).toHaveLength(9);
+  });
+});
+
+describe("getInningsArray", () => {
+  it("returns [1] for 1 inning", () => {
+    expect(getInningsArray(1)).toEqual([1]);
+  });
+
+  it("returns [1..6] for 6 innings", () => {
+    expect(getInningsArray(6)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("returns [1..9] for 9 innings", () => {
+    expect(getInningsArray(9)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 });

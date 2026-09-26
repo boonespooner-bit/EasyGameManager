@@ -360,6 +360,125 @@ describe("generateGamePlan", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Configurable innings
+  // -------------------------------------------------------------------------
+
+  describe("configurable innings", () => {
+    it("generates correct assignments for a 4-inning game", () => {
+      const players = makeRoster(9);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 4 },
+      );
+
+      const innings = [1, 2, 3, 4];
+      for (const inning of innings) {
+        const inningAssignments = assignments.filter((a) => a.inning === inning);
+        expect(inningAssignments).toHaveLength(9);
+      }
+      expect(assignments.filter((a) => a.inning === 5)).toHaveLength(0);
+      expect(assignments.filter((a) => a.inning === 6)).toHaveLength(0);
+    });
+
+    it("generates correct assignments for an 8-inning game", () => {
+      const players = makeRoster(9);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 8 },
+      );
+
+      for (let inning = 1; inning <= 8; inning++) {
+        const positions = assignments
+          .filter((a) => a.inning === inning)
+          .map((a) => a.position)
+          .sort();
+        expect(positions).toEqual([...POSITIONS].sort());
+      }
+      expect(assignments).toHaveLength(9 * 8);
+    });
+
+    it("fills every position each inning in a 3-inning game", () => {
+      const players = makeRoster(9);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 3 },
+      );
+
+      for (let inning = 1; inning <= 3; inning++) {
+        const positions = assignments
+          .filter((a) => a.inning === inning)
+          .map((a) => a.position)
+          .sort();
+        expect(positions).toEqual([...POSITIONS].sort());
+      }
+      expect(assignments).toHaveLength(9 * 3);
+    });
+
+    it("benches correctly with non-6 innings", () => {
+      const players = makeRoster(11);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 5 },
+      );
+
+      for (let inning = 1; inning <= 5; inning++) {
+        const benched = assignments.filter(
+          (a) => a.inning === inning && a.position === "BENCH",
+        );
+        expect(benched).toHaveLength(2);
+        const field = assignments.filter(
+          (a) => a.inning === inning && a.position !== "BENCH",
+        );
+        expect(field).toHaveLength(9);
+      }
+    });
+
+    it("limits bench to 2 innings in a short game", () => {
+      const players = makeRoster(11);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 4 },
+      );
+
+      for (const player of players) {
+        const benchCount = benchInningsForPlayer(assignments, player.id).length;
+        expect(benchCount).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it("does not bench consecutively in a longer game", () => {
+      const players = makeRoster(11);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 8 },
+      );
+
+      for (const player of players) {
+        const benchInnings = benchInningsForPlayer(assignments, player.id).sort();
+        for (let i = 1; i < benchInnings.length; i++) {
+          expect(benchInnings[i] - benchInnings[i - 1]).toBeGreaterThan(1);
+        }
+      }
+    });
+
+    it("gives every player an assignment every inning in a 7-inning game", () => {
+      const players = makeRoster(12);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 7 },
+      );
+
+      const expectedInnings = [1, 2, 3, 4, 5, 6, 7];
+      for (const player of players) {
+        const playerInnings = assignmentsForPlayer(assignments, player.id)
+          .map((a) => a.inning)
+          .sort((a, b) => a - b);
+        expect(playerInnings).toEqual(expectedInnings);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Position variety
   // -------------------------------------------------------------------------
 
