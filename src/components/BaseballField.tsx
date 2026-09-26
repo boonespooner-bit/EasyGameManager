@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { INNINGS, activePositionsFor, type FieldPosition } from "@/types";
+import { getInningsArray, activePositionsFor, type FieldPosition } from "@/types";
 
 interface Assignment {
   playerId: string;
@@ -52,6 +52,9 @@ interface Props {
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
+  inningsPlanned?: number;
+  inningsPlayed?: number | null;
+  onInningsChange?: (planned: number, played: number | null) => void;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -94,6 +97,9 @@ export default function BaseballField({
   seasonBenchTotals = [],
   extraOutfielder = false,
   disabledPositions = [],
+  inningsPlanned = 6,
+  inningsPlayed = null,
+  onInningsChange,
 }: Props) {
   // Positions rendered on the field (base set — includes disabled ones as greyed out)
   const shownPositions = useMemo(
@@ -101,6 +107,8 @@ export default function BaseballField({
     [extraOutfielder],
   );
   const disabledSet = useMemo(() => new Set(disabledPositions), [disabledPositions]);
+  const innings = useMemo(() => getInningsArray(inningsPlanned), [inningsPlanned]);
+  const effectiveInningsPlayed = inningsPlayed ?? inningsPlanned;
   const [dragSource, setDragSource] = useState<{ position: string; inning: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [battingDragIndex, setBattingDragIndex] = useState<number | null>(null);
@@ -168,9 +176,9 @@ export default function BaseballField({
       }
     }
     const result = new Set<string>();
-    for (let i = 1; i < INNINGS.length; i++) {
-      const prev = benchByInning.get(INNINGS[i - 1]);
-      const curr = benchByInning.get(INNINGS[i]);
+    for (let i = 1; i < innings.length; i++) {
+      const prev = benchByInning.get(innings[i - 1]);
+      const curr = benchByInning.get(innings[i]);
       if (prev && curr) {
         for (const id of curr) {
           if (prev.has(id)) result.add(id);
@@ -178,7 +186,7 @@ export default function BaseballField({
       }
     }
     return result;
-  }, [assignments]);
+  }, [assignments, innings]);
 
   // For each not-sat player, suggest the best inning + bench player to swap with.
   // Prefers swapping in a benched player who has sat the most so far (to balance
@@ -197,7 +205,7 @@ export default function BaseballField({
     const suggestions: Suggestion[] = [];
     for (const np of notSatPlayers) {
       const candidates: Suggestion[] = [];
-      for (const inning of INNINGS) {
+      for (const inning of innings) {
         const npAssignment = assignments.find(
           (a) => a.playerId === np.playerId && a.inning === inning,
         );
@@ -302,14 +310,14 @@ export default function BaseballField({
   })();
 
   const getPlayersAtPosition = (position: string) => {
-    return INNINGS.map((inning) => {
+    return innings.map((inning) => {
       const a = assignments.find((a) => a.position === position && a.inning === inning);
       return a ? { inning, playerId: a.playerId, name: a.playerFirstName || a.playerName.split(" ")[0] } : null;
     });
   };
 
   const getBenchByInning = () => {
-    return INNINGS.map((inning) => ({
+    return innings.map((inning) => ({
       inning,
       players: assignments
         .filter((a) => a.position === "BENCH" && a.inning === inning)
@@ -405,7 +413,7 @@ export default function BaseballField({
 
   // Build data for print view
   const getBenchForPrint = () => {
-    return INNINGS.map((inning) => ({
+    return innings.map((inning) => ({
       inning,
       players: assignments
         .filter((a) => a.position === "BENCH" && a.inning === inning)
@@ -414,7 +422,7 @@ export default function BaseballField({
   };
 
   const getPlayersForPrint = (position: string) => {
-    return INNINGS.map((inning) => {
+    return innings.map((inning) => {
       const a = assignments.find((a) => a.position === position && a.inning === inning);
       return a ? (a.playerFirstName || a.playerName.split(" ")[0]) : "\u2014";
     });
@@ -508,12 +516,15 @@ export default function BaseballField({
                   {isDisabled ? (
                     <div style={{ textAlign: "center", color: "#6b7280", fontStyle: "italic", padding: "2px 0" }}>disabled</div>
                   ) : (
-                    players.map((name, i) => (
-                      <div key={i} style={{ display: "flex", gap: "3px", padding: "0.5px 0" }}>
-                        <span style={{ fontWeight: "bold", color: "#888", width: "10px", textAlign: "right" }}>{i + 1}.</span>
-                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
-                      </div>
-                    ))
+                    players.map((name, i) => {
+                      const isUnplayedInn = (i + 1) > effectiveInningsPlayed;
+                      return (
+                        <div key={i} style={{ display: "flex", gap: "3px", padding: "0.5px 0", opacity: isUnplayedInn ? 0.35 : 1 }}>
+                          <span style={{ fontWeight: "bold", color: "#888", width: "10px", textAlign: "right" }}>{i + 1}.</span>
+                          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -524,7 +535,7 @@ export default function BaseballField({
         {/* Bench boxes */}
         <div style={{ marginBottom: "8px" }}>
           <div style={{ fontSize: "11px", fontWeight: "bold", marginBottom: "3px" }}>Bench</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${inningsPlanned}, 1fr)`, gap: "4px" }}>
             {getBenchForPrint().map(({ inning, players }) => (
               <div key={inning} style={{
                 border: "1px solid #333",
@@ -532,6 +543,8 @@ export default function BaseballField({
                 padding: "3px 4px",
                 minHeight: "40px",
                 fontSize: "8px",
+                opacity: inning > effectiveInningsPlayed ? 0.4 : 1,
+                background: inning > effectiveInningsPlayed ? "#eee" : "transparent",
               }}>
                 <div style={{ fontWeight: "bold", color: "#666", marginBottom: "2px", fontSize: "8px" }}>Inn {inning}</div>
                 {players.map((p, i) => {
@@ -653,8 +666,8 @@ export default function BaseballField({
             <tr>
               <th style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", background: "#eee" }}>#</th>
               <th style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "left", background: "#eee" }}>Player</th>
-              {INNINGS.map((inn) => (
-                <th key={inn} style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", background: "#eee" }}>
+              {innings.map((inn) => (
+                <th key={inn} style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", background: inn > effectiveInningsPlayed ? "#ddd" : "#eee" }}>
                   Inn {inn}
                 </th>
               ))}
@@ -667,11 +680,11 @@ export default function BaseballField({
                 <td style={{ border: "1px solid #999", padding: "8px 12px", fontWeight: 500, whiteSpace: "nowrap" }}>
                   {b.playerName}{b.jerseyNumber ? ` #${b.jerseyNumber}` : ""}
                 </td>
-                {INNINGS.map((inn) => {
+                {innings.map((inn) => {
                   const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
                   const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
                   return (
-                    <td key={inn} style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", fontFamily: "monospace", fontSize: "18px", fontStyle: pos === "N" ? "italic" : "normal", color: pos === "N" ? "#999" : "#333" }}>
+                    <td key={inn} style={{ border: "1px solid #999", padding: "8px 12px", textAlign: "center", fontFamily: "monospace", fontSize: "18px", fontStyle: pos === "N" ? "italic" : "normal", color: inn > effectiveInningsPlayed ? "#bbb" : pos === "N" ? "#999" : "#333", background: inn > effectiveInningsPlayed ? "#eee" : "transparent" }}>
                       {pos}
                     </td>
                   );
@@ -793,6 +806,43 @@ export default function BaseballField({
         </div>
       </div>
 
+      {onInningsChange && (
+        <div className="no-print flex justify-center items-center gap-4 mb-3 text-sm text-gray-600">
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium">Innings:</span>
+            <select
+              value={inningsPlanned}
+              onChange={(e) => {
+                const newPlanned = parseInt(e.target.value, 10);
+                const adjustedPlayed = inningsPlayed !== null && inningsPlayed >= newPlanned ? null : inningsPlayed;
+                onInningsChange(newPlanned, adjustedPlayed);
+              }}
+              className="border border-gray-300 rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+            >
+              {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium">Played:</span>
+            <select
+              value={inningsPlayed ?? ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                onInningsChange(inningsPlanned, val === "" ? null : parseInt(val, 10));
+              }}
+              className="border border-gray-300 rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+            >
+              <option value="">All {inningsPlanned}</option>
+              {innings.map((inn) => (
+                <option key={inn} value={inn}>{inn}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {!isLocked && !showTableView && (
         <p className="no-print text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
       )}
@@ -804,13 +854,15 @@ export default function BaseballField({
               <tr className="bg-gray-100">
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold text-gray-700 w-8">#</th>
                 <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap">Player</th>
-                {INNINGS.map((inn) => (
+                {innings.map((inn) => (
                   <th
                     key={inn}
                     className={`border border-gray-300 px-3 py-2 text-center font-semibold cursor-pointer transition-colors ${
-                      highlightedInning === inn
-                        ? "bg-orange-200 text-orange-900"
-                        : "text-gray-700 hover:bg-orange-50"
+                      inn > effectiveInningsPlayed
+                        ? "bg-gray-200 text-gray-400"
+                        : highlightedInning === inn
+                          ? "bg-orange-200 text-orange-900"
+                          : "text-gray-700 hover:bg-orange-50"
                     }`}
                     onClick={() => { setHighlightedInning(highlightedInning === inn ? null : inn); setHighlightedPlayerId(null); }}
                   >
@@ -836,23 +888,26 @@ export default function BaseballField({
                     >
                       {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
                     </td>
-                    {INNINGS.map((inn) => {
+                    {innings.map((inn) => {
                       const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
                       const pos = assignment ? (assignment.position === "BENCH" ? "N" : assignment.position) : "—";
-                      const isCellHighlighted = isRowHighlighted || highlightedInning === inn;
+                      const isUnplayed = inn > effectiveInningsPlayed;
+                      const isCellHighlighted = !isUnplayed && (isRowHighlighted || highlightedInning === inn);
                       const isCellEditing = tableEditingCell?.playerId === b.playerId && tableEditingCell?.inning === inn;
-                      const canEditTable = !isLocked && !!onPositionChange;
+                      const canEditTable = !isLocked && !!onPositionChange && !isUnplayed;
                       return (
                         <td
                           key={inn}
                           className={`border border-gray-300 px-3 py-1.5 text-center font-mono text-sm relative ${
                             canEditTable ? "cursor-pointer hover:ring-1 hover:ring-orange-300" : ""
                           } ${
-                            isCellHighlighted
-                              ? "bg-orange-200 font-bold text-orange-900"
-                              : pos === "N"
-                                ? "text-gray-400 italic"
-                                : "text-gray-700"
+                            isUnplayed
+                              ? "bg-gray-100 text-gray-300"
+                              : isCellHighlighted
+                                ? "bg-orange-200 font-bold text-orange-900"
+                                : pos === "N"
+                                  ? "text-gray-400 italic"
+                                  : "text-gray-700"
                           }`}
                           onClick={() => {
                             if (canEditTable && !isCellEditing) {
@@ -959,6 +1014,7 @@ export default function BaseballField({
                       disabled={!!regenerating}
                       highlightedPlayerId={highlightedPlayerId}
                       highlightedInning={highlightedInning}
+                      effectiveInningsPlayed={effectiveInningsPlayed}
                     />
                   ) : (
                     <PositionBox
@@ -975,6 +1031,7 @@ export default function BaseballField({
                       heldInnings={heldInningsForPos}
                       highlightedPlayerId={highlightedPlayerId}
                       highlightedInning={highlightedInning}
+                      effectiveInningsPlayed={effectiveInningsPlayed}
                     />
                   )}
                 </div>
@@ -985,11 +1042,12 @@ export default function BaseballField({
           {/* Bench */}
           <div className="mt-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Bench</h3>
-            <div className="grid grid-cols-6 gap-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${inningsPlanned}, minmax(0, 1fr))` }}>
               {getBenchByInning().map(({ inning, players }) => {
                 const benchHeld = heldPositions?.some((h) => h.position === "BENCH" && h.inning === inning);
                 const isBenchEditing = benchEditingInning === inning;
-                const canEditBench = !isLocked && !!allPlayers && !!onPositionChange;
+                const isUnplayedInning = inning > effectiveInningsPlayed;
+                const canEditBench = !isLocked && !!allPlayers && !!onPositionChange && !isUnplayedInning;
                 const benchFiltered = isBenchEditing
                   ? (benchSearch.trim()
                     ? (allPlayers || []).filter((p) => {
@@ -1001,7 +1059,7 @@ export default function BaseballField({
                 return (
                   <div
                     key={inning}
-                    className={`bg-gray-100 border rounded p-2 min-h-[80px] ${benchHeld ? "border-amber-300" : "border-gray-300"}`}
+                    className={`border rounded p-2 min-h-[80px] ${isUnplayedInning ? "bg-gray-50 border-gray-200 opacity-50" : benchHeld ? "bg-gray-100 border-amber-300" : "bg-gray-100 border-gray-300"}`}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => handleDrop("BENCH", inning)}
                   >
@@ -1373,6 +1431,7 @@ function PitcherBox({
   disabled,
   highlightedPlayerId,
   highlightedInning,
+  effectiveInningsPlayed,
 }: {
   players: ({ inning: number; playerId: string; name: string } | null)[];
   allPlayers: { id: string; name: string; firstName?: string; ratings?: { position: string; rating: number }[] }[];
@@ -1381,6 +1440,7 @@ function PitcherBox({
   disabled: boolean;
   highlightedPlayerId?: string | null;
   highlightedInning?: number | null;
+  effectiveInningsPlayed?: number;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -1415,12 +1475,15 @@ function PitcherBox({
           const inning = i + 1;
           const isEditing = editingInning === inning;
           const isDragOver = dragOverInning === inning;
+          const isUnplayed = effectiveInningsPlayed !== undefined && inning > effectiveInningsPlayed;
 
           return (
             <div
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
-                isDragOver ? "ring-2 ring-red-400 bg-red-100" : (p && highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
+                isUnplayed
+                  ? "bg-gray-100 text-gray-300"
+                  : isDragOver ? "ring-2 ring-red-400 bg-red-100" : (p && highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : p ? "bg-red-50 hover:bg-red-100" : "bg-gray-50"
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1476,15 +1539,15 @@ function PitcherBox({
                 </div>
               ) : (
                 <div
-                  className="flex items-center gap-1 cursor-pointer"
+                  className={`flex items-center gap-1 ${isUnplayed ? "" : "cursor-pointer"}`}
                   onClick={() => {
-                    if (!disabled) {
+                    if (!disabled && !isUnplayed) {
                       setEditingInning(inning);
                       setSearch("");
                     }
                   }}
                 >
-                  <span className="font-bold text-gray-400 w-3">{inning}.</span>
+                  <span className={`font-bold w-3 ${isUnplayed ? "text-gray-300" : "text-gray-400"}`}>{inning}.</span>
                   <span className="truncate">{p?.name || "\u2014"}</span>
                 </div>
               )}
@@ -1515,6 +1578,7 @@ function PositionBox({
   heldInnings,
   highlightedPlayerId,
   highlightedInning,
+  effectiveInningsPlayed,
 }: {
   position: string;
   players: ({ inning: number; playerId: string; name: string } | null)[];
@@ -1529,6 +1593,7 @@ function PositionBox({
   heldInnings?: Set<number>;
   highlightedPlayerId?: string | null;
   highlightedInning?: number | null;
+  effectiveInningsPlayed?: number;
 }) {
   const [editingInning, setEditingInning] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -1564,15 +1629,18 @@ function PositionBox({
           const inning = i + 1;
           const isEditing = editingInning === inning;
           const isHeld = heldInnings?.has(inning);
+          const isUnplayed = effectiveInningsPlayed !== undefined && inning > effectiveInningsPlayed;
 
           return (
             <div
               key={i}
               className={`relative text-[10px] px-1 py-0.5 rounded mb-0.5 transition-colors ${
-                isEditing ? "" : p
-                  ? `${(highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
-                  : "bg-gray-50"
-              } ${isDragging && !p ? "ring-1 ring-blue-300" : ""}`}
+                isUnplayed
+                  ? "bg-gray-100 text-gray-300"
+                  : isEditing ? "" : p
+                    ? `${(highlightedPlayerId && p.playerId === highlightedPlayerId) || (highlightedInning !== null && highlightedInning !== undefined && inning === highlightedInning) ? "bg-orange-200 ring-1 ring-orange-400 font-bold" : isHeld ? "bg-amber-50 border border-amber-300" : "bg-blue-50"} hover:bg-blue-100 cursor-pointer`
+                    : "bg-gray-50"
+              } ${isDragging && !p && !isUnplayed ? "ring-1 ring-blue-300" : ""}`}
               draggable={!isLocked && !!p && !isEditing}
               onDragStart={() => p && onDragStart(position, p.inning)}
               onDragOver={(e) => e.preventDefault()}
@@ -1619,13 +1687,13 @@ function PositionBox({
                 <div
                   className="flex items-center gap-1"
                   onClick={() => {
-                    if (canEdit && !disabled) {
+                    if (canEdit && !disabled && !isUnplayed) {
                       setEditingInning(inning);
                       setSearch("");
                     }
                   }}
                 >
-                  <span className="font-bold text-gray-400 w-3">{inning}.</span>
+                  <span className={`font-bold w-3 ${isUnplayed ? "text-gray-300" : "text-gray-400"}`}>{inning}.</span>
                   {isHeld && <span className="text-amber-500 text-[8px]" title="Held">&#128274;</span>}
                   <span className="truncate">{p?.name || "\u2014"}</span>
                 </div>

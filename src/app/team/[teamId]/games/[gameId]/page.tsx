@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from "react";
 import BaseballField from "@/components/BaseballField";
 import Link from "next/link";
 import type { FieldPosition } from "@/types";
-import { INNINGS, POSITIONS } from "@/types";
+import { POSITIONS, getInningsArray } from "@/types";
 
 interface Assignment {
   playerId: string;
@@ -53,6 +53,8 @@ interface GameData {
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
+  inningsPlanned?: number;
+  inningsPlayed?: number | null;
 }
 
 export default function GamePlanPage() {
@@ -205,9 +207,11 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
+  const innings = getInningsArray(game?.inningsPlanned ?? 6);
+
   // Get current pitchers from assignments
   const getCurrentPitchers = () => {
-    return INNINGS.map((inning) => {
+    return innings.map((inning) => {
       const a = assignments.find((a) => a.position === "P" && a.inning === inning);
       return { inning, playerId: a?.playerId || null, playerName: a?.playerName || null };
     });
@@ -492,6 +496,30 @@ export default function GamePlanPage() {
       method: "DELETE",
     });
     await fetchGame();
+  };
+
+  const handleInningsChange = async (planned: number, played: number | null) => {
+    const plannedChanged = planned !== (game?.inningsPlanned ?? 6);
+    setGame((prev) => prev ? { ...prev, inningsPlanned: planned, inningsPlayed: played } : prev);
+    setSaving(true);
+    await fetch(`/api/teams/${teamId}/games/${gameId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ inningsPlanned: planned, inningsPlayed: played }),
+    });
+    if (plannedChanged) {
+      setRegenerating(true);
+      await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lockedPositions: heldPositions,
+        }),
+      });
+      setRegenerating(false);
+      await fetchGame(false);
+    }
+    setSaving(false);
   };
 
   const handleRosterToggle = async (playerId: string, action: "exclude" | "include") => {
@@ -1203,7 +1231,7 @@ export default function GamePlanPage() {
                 <thead>
                   <tr className="bg-gray-50">
                     <th className="text-left p-2 border border-gray-200 font-semibold text-gray-600 w-16">Pos</th>
-                    {INNINGS.map((inn) => (
+                    {innings.map((inn) => (
                       <th key={inn} className="text-center p-2 border border-gray-200 font-semibold text-gray-600">
                         Inn {inn}
                       </th>
@@ -1214,7 +1242,7 @@ export default function GamePlanPage() {
                   {["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"].map((pos) => (
                     <tr key={pos} className={pos === "P" || pos === "C" ? "bg-amber-50/50" : ""}>
                       <td className="p-2 border border-gray-200 font-semibold text-gray-700">{pos}</td>
-                      {INNINGS.map((inn) => {
+                      {innings.map((inn) => {
                         const a = suggestedAssignments.find(
                           (s) => s.inning === inn && s.position === pos,
                         );
@@ -1228,7 +1256,7 @@ export default function GamePlanPage() {
                   ))}
                   <tr className="bg-gray-50/50">
                     <td className="p-2 border border-gray-200 font-semibold text-gray-500">Bench</td>
-                    {INNINGS.map((inn) => {
+                    {innings.map((inn) => {
                       const benched = suggestedAssignments.filter(
                         (s) => s.inning === inn && s.position === "BENCH",
                       );
@@ -1280,6 +1308,9 @@ export default function GamePlanPage() {
         sandlotRules={game.sandlotRules}
         extraOutfielder={game.extraOutfielder}
         disabledPositions={game.disabledPositions}
+        inningsPlanned={game.inningsPlanned ?? 6}
+        inningsPlayed={game.inningsPlayed ?? null}
+        onInningsChange={handleInningsChange}
       />
     </div>
   );
