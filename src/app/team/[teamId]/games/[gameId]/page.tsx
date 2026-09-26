@@ -99,6 +99,7 @@ export default function GamePlanPage() {
   const [sandlotOpen, setSandlotOpen] = useState(false);
   const [savingSandlot, setSavingSandlot] = useState(false);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
+  const [teamGames, setTeamGames] = useState<{ id: string; opponent: string; date: string; isLocked: boolean }[]>([]);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -148,8 +149,22 @@ export default function GamePlanPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
-    if (status === "authenticated") fetchGame();
-  }, [status, router, fetchGame]);
+    if (status === "authenticated") {
+      fetchGame();
+      fetch(`/api/teams/${teamId}/games`).then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setTeamGames(
+            data
+              .filter((g: { id: string }) => g.id !== gameId)
+              .map((g: { id: string; opponent: string; date: string; isLocked: boolean }) => ({
+                id: g.id, opponent: g.opponent, date: g.date, isLocked: g.isLocked,
+              })),
+          );
+        }
+      });
+    }
+  }, [status, router, fetchGame, teamId, gameId]);
 
   useEffect(() => {
     if (!absentDropdownId) return;
@@ -504,6 +519,10 @@ export default function GamePlanPage() {
       method: "DELETE",
     });
     await fetchGame();
+  };
+
+  const handleNavigateToGame = (targetGameId: string) => {
+    router.push(`/team/${teamId}/games/${targetGameId}`);
   };
 
   const handleInningsChange = async (planned: number, played: number | null) => {
@@ -1362,6 +1381,8 @@ export default function GamePlanPage() {
         inningsPlayed={game.inningsPlayed ?? null}
         onInningsChange={handleInningsChange}
         onPlayerAbsent={!game.isLocked ? (playerId) => handleRosterToggle(playerId, "exclude") : undefined}
+        teamGames={teamGames}
+        onNavigateToGame={handleNavigateToGame}
       />
     </div>
   );

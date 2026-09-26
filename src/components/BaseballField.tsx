@@ -56,6 +56,8 @@ interface Props {
   inningsPlayed?: number | null;
   onInningsChange?: (planned: number, played: number | null) => void;
   onPlayerAbsent?: (playerId: string) => void;
+  teamGames?: { id: string; opponent: string; date: string; isLocked: boolean }[];
+  onNavigateToGame?: (gameId: string) => void;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -102,6 +104,8 @@ export default function BaseballField({
   inningsPlayed = null,
   onInningsChange,
   onPlayerAbsent,
+  teamGames,
+  onNavigateToGame,
 }: Props) {
   // Positions rendered on the field (base set — includes disabled ones as greyed out)
   const shownPositions = useMemo(
@@ -131,6 +135,7 @@ export default function BaseballField({
   const [benchEditingPlayerId, setBenchEditingPlayerId] = useState<string | null>(null);
   const [benchSearch, setBenchSearch] = useState("");
   const [statusDropdownPlayerId, setStatusDropdownPlayerId] = useState<string | null>(null);
+  const [showGamePicker, setShowGamePicker] = useState(false);
 
   useEffect(() => {
     if (!statusDropdownPlayerId) return;
@@ -138,6 +143,13 @@ export default function BaseballField({
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [statusDropdownPlayerId]);
+
+  useEffect(() => {
+    if (!showGamePicker) return;
+    const close = () => setShowGamePicker(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showGamePicker]);
 
   // Players who have not sat (no BENCH assignment) at all in the game
   const notSatPlayers = useMemo(() => {
@@ -751,38 +763,80 @@ export default function BaseballField({
             </div>
           </div>
         ) : (
-          <>
+          <div className="relative inline-block">
             <h1
-              className={`text-2xl font-bold text-gray-900 ${!isLocked && onGameInfoUpdate ? "cursor-pointer hover:text-blue-700 transition-colors" : ""}`}
-              onClick={() => {
-                if (!isLocked && onGameInfoUpdate) {
-                  setEditOpponent(opponent);
-                  setEditDate(date);
-                  setEditingGameInfo(true);
+              className={`text-2xl font-bold text-gray-900 ${teamGames && onNavigateToGame ? "cursor-pointer hover:text-blue-700 transition-colors" : ""}`}
+              onClick={(e) => {
+                if (teamGames && onNavigateToGame) {
+                  e.stopPropagation();
+                  setShowGamePicker(!showGamePicker);
                 }
               }}
-              title={!isLocked && onGameInfoUpdate ? "Click to edit" : undefined}
+              title={teamGames && onNavigateToGame ? "Click to switch games or edit" : undefined}
             >
               {teamName} vs. {opponent}
-              {!isLocked && onGameInfoUpdate && (
+              {teamGames && onNavigateToGame && (
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 inline-block ml-1 text-gray-400">
-                  <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                  <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
                 </svg>
               )}
             </h1>
             <p
-              className={`text-gray-500 ${!isLocked && onGameInfoUpdate ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
-              onClick={() => {
-                if (!isLocked && onGameInfoUpdate) {
-                  setEditOpponent(opponent);
-                  setEditDate(date);
-                  setEditingGameInfo(true);
+              className={`text-gray-500 ${teamGames && onNavigateToGame ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
+              onClick={(e) => {
+                if (teamGames && onNavigateToGame) {
+                  e.stopPropagation();
+                  setShowGamePicker(!showGamePicker);
                 }
               }}
             >
               {new Date(date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
             </p>
-          </>
+            {showGamePicker && teamGames && onNavigateToGame && (
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[280px] max-h-[60vh] overflow-y-auto">
+                {teamGames.length > 0 && (
+                  <div className="py-1">
+                    {teamGames.map((g) => (
+                      <button
+                        key={g.id}
+                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors flex items-center justify-between"
+                        onClick={() => { setShowGamePicker(false); onNavigateToGame(g.id); }}
+                      >
+                        <div>
+                          <span className="font-medium text-gray-900">vs {g.opponent}</span>
+                          <span className="text-gray-500 ml-2 text-xs">
+                            {new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
+                          </span>
+                        </div>
+                        {g.isLocked && (
+                          <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full ml-2">Locked</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!isLocked && onGameInfoUpdate && (
+                  <>
+                    {teamGames.length > 0 && <div className="border-t border-gray-200" />}
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition-colors font-medium flex items-center gap-2"
+                      onClick={() => {
+                        setShowGamePicker(false);
+                        setEditOpponent(opponent);
+                        setEditDate(date);
+                        setEditingGameInfo(true);
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                      </svg>
+                      Edit Game Info
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         )}
         {isLocked && (
           <span className="inline-block mt-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
