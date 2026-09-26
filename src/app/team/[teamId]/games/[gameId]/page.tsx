@@ -83,6 +83,7 @@ export default function GamePlanPage() {
   } | null>(null);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [rosterUpdating, setRosterUpdating] = useState<string | null>(null);
+  const [absentDropdownId, setAbsentDropdownId] = useState<string | null>(null);
   const [showPoolForm, setShowPoolForm] = useState(false);
   const [poolName, setPoolName] = useState("");
   const [poolRatings, setPoolRatings] = useState<Record<string, number>>(() => {
@@ -149,6 +150,13 @@ export default function GamePlanPage() {
     if (status === "unauthenticated") router.push("/login");
     if (status === "authenticated") fetchGame();
   }, [status, router, fetchGame]);
+
+  useEffect(() => {
+    if (!absentDropdownId) return;
+    const close = () => setAbsentDropdownId(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [absentDropdownId]);
 
   const handleUpdate = async (updated: Assignment[]) => {
     setAssignments(updated);
@@ -855,12 +863,54 @@ export default function GamePlanPage() {
       {((game.exclusions && game.exclusions.length > 0) || (game.poolPlayers && game.poolPlayers.length > 0)) && (
         <div className="no-print flex flex-wrap gap-2 mb-3 text-xs">
           {game.exclusions && game.exclusions.length > 0 && (
-            <span className="bg-red-50 text-red-700 px-2 py-1 rounded">
-              Absent: {game.exclusions.map((e) => {
+            <>
+              <span className="text-red-700 font-medium px-1 py-1">Absent:</span>
+              {[...game.exclusions].sort((a, b) => {
+                const pa = game!.team.players.find((p) => p.id === a.playerId);
+                const pb = game!.team.players.find((p) => p.id === b.playerId);
+                const lastA = (pa?.lastName || pa?.name?.split(" ").slice(-1)[0] || "").toLowerCase();
+                const lastB = (pb?.lastName || pb?.name?.split(" ").slice(-1)[0] || "").toLowerCase();
+                return lastA.localeCompare(lastB);
+              }).map((e) => {
                 const player = game!.team.players.find((p) => p.id === e.playerId);
-                return player?.name || "Unknown";
-              }).join(", ")}
-            </span>
+                const name = player?.name || "Unknown";
+                return (
+                  <span key={e.playerId} className="relative inline-flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded">
+                    {!game!.isLocked ? (
+                      <>
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); setAbsentDropdownId(absentDropdownId === e.playerId ? null : e.playerId); }}
+                          disabled={!!rosterUpdating}
+                          className="w-2.5 h-2.5 rounded-full bg-red-400 hover:bg-red-500 flex-shrink-0 cursor-pointer disabled:opacity-50"
+                          title="Player status"
+                        />
+                        <span className="hover:text-red-900 cursor-pointer" onClick={(ev) => { ev.stopPropagation(); setAbsentDropdownId(absentDropdownId === e.playerId ? null : e.playerId); }}>
+                          {name}
+                        </span>
+                        {absentDropdownId === e.playerId && (
+                          <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 text-sm min-w-[120px]">
+                            <button
+                              className="w-full text-left px-3 py-1.5 text-gray-600 hover:bg-green-50 hover:text-green-700 flex items-center gap-2"
+                              onClick={() => { setAbsentDropdownId(null); handleRosterToggle(e.playerId, "include"); }}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-green-400" /> Playing
+                            </button>
+                            <button className="w-full text-left px-3 py-1.5 text-red-700 bg-red-50 font-medium flex items-center gap-2" disabled>
+                              <span className="w-2 h-2 rounded-full bg-red-400" /> Absent
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
+                        {name}
+                      </>
+                    )}
+                  </span>
+                );
+              })}
+            </>
           )}
           {game.poolPlayers && game.poolPlayers.length > 0 && (
             <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded">
@@ -1311,6 +1361,7 @@ export default function GamePlanPage() {
         inningsPlanned={game.inningsPlanned ?? 6}
         inningsPlayed={game.inningsPlayed ?? null}
         onInningsChange={handleInningsChange}
+        onPlayerAbsent={!game.isLocked ? (playerId) => handleRosterToggle(playerId, "exclude") : undefined}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { getInningsArray, activePositionsFor, type FieldPosition } from "@/types";
 
 interface Assignment {
@@ -55,6 +55,7 @@ interface Props {
   inningsPlanned?: number;
   inningsPlayed?: number | null;
   onInningsChange?: (planned: number, played: number | null) => void;
+  onPlayerAbsent?: (playerId: string) => void;
 }
 
 const POSITION_COORDS: Record<string, { x: number; y: number }> = {
@@ -100,6 +101,7 @@ export default function BaseballField({
   inningsPlanned = 6,
   inningsPlayed = null,
   onInningsChange,
+  onPlayerAbsent,
 }: Props) {
   // Positions rendered on the field (base set — includes disabled ones as greyed out)
   const shownPositions = useMemo(
@@ -128,6 +130,14 @@ export default function BaseballField({
   const [benchEditingInning, setBenchEditingInning] = useState<number | null>(null);
   const [benchEditingPlayerId, setBenchEditingPlayerId] = useState<string | null>(null);
   const [benchSearch, setBenchSearch] = useState("");
+  const [statusDropdownPlayerId, setStatusDropdownPlayerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!statusDropdownPlayerId) return;
+    const close = () => setStatusDropdownPlayerId(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [statusDropdownPlayerId]);
 
   // Players who have not sat (no BENCH assignment) at all in the game
   const notSatPlayers = useMemo(() => {
@@ -883,10 +893,38 @@ export default function BaseballField({
                       {b.order}
                     </td>
                     <td
-                      className={`border border-gray-300 px-3 py-1.5 font-medium cursor-pointer hover:text-orange-700 transition-colors whitespace-nowrap ${isRowHighlighted ? "bg-orange-100 text-orange-900" : "text-gray-900"}`}
-                      onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
+                      className={`border border-gray-300 px-3 py-1.5 font-medium whitespace-nowrap ${isRowHighlighted ? "bg-orange-100 text-orange-900" : "text-gray-900"}`}
                     >
-                      {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
+                      <span className="inline-flex items-center gap-1.5">
+                        {onPlayerAbsent ? (
+                          <span className="relative">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setStatusDropdownPlayerId(statusDropdownPlayerId === b.playerId ? null : b.playerId); }}
+                              className="w-2.5 h-2.5 rounded-full bg-green-400 hover:bg-green-500 flex-shrink-0 cursor-pointer"
+                              title="Player status"
+                            />
+                            {statusDropdownPlayerId === b.playerId && (
+                              <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 text-sm min-w-[120px]">
+                                <button className="w-full text-left px-3 py-1.5 text-green-700 bg-green-50 font-medium flex items-center gap-2" disabled>
+                                  <span className="w-2 h-2 rounded-full bg-green-400" /> Playing
+                                </button>
+                                <button
+                                  className="w-full text-left px-3 py-1.5 text-gray-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2"
+                                  onClick={() => { setStatusDropdownPlayerId(null); onPlayerAbsent(b.playerId); }}
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-red-400" /> Absent
+                                </button>
+                              </div>
+                            )}
+                          </span>
+                        ) : null}
+                        <span
+                          className="cursor-pointer hover:text-orange-700 transition-colors"
+                          onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
+                        >
+                          {b.playerName}{b.jerseyNumber ? <span className="text-xs text-gray-400 ml-1">#{b.jerseyNumber}</span> : null}
+                        </span>
+                      </span>
                     </td>
                     {innings.map((inn) => {
                       const assignment = assignments.find((a) => a.playerId === b.playerId && a.inning === inn);
@@ -1336,6 +1374,28 @@ export default function BaseballField({
               >
                 <span className="text-gray-300 text-lg leading-none select-none mr-1">&#8801;</span>
                 <span className="text-xs font-bold text-gray-400 w-4">{b.order}</span>
+                {onPlayerAbsent ? (
+                  <span className="relative">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setStatusDropdownPlayerId(statusDropdownPlayerId === b.playerId ? null : b.playerId); }}
+                      className="w-2.5 h-2.5 rounded-full bg-green-400 hover:bg-green-500 flex-shrink-0 cursor-pointer"
+                      title="Player status"
+                    />
+                    {statusDropdownPlayerId === b.playerId && (
+                      <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 text-sm min-w-[120px]">
+                        <button className="w-full text-left px-3 py-1.5 text-green-700 bg-green-50 font-medium flex items-center gap-2" disabled>
+                          <span className="w-2 h-2 rounded-full bg-green-400" /> Playing
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-1.5 text-gray-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2"
+                          onClick={() => { setStatusDropdownPlayerId(null); onPlayerAbsent(b.playerId); }}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-red-400" /> Absent
+                        </button>
+                      </div>
+                    )}
+                  </span>
+                ) : null}
                 <button
                   className="text-sm text-left cursor-pointer"
                   onClick={() => { setHighlightedPlayerId(highlightedPlayerId === b.playerId ? null : b.playerId); setHighlightedInning(null); }}
