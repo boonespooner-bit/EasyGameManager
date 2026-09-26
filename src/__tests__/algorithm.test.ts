@@ -502,6 +502,104 @@ describe("generateGamePlan", () => {
 // buildSeasonHistory
 // ---------------------------------------------------------------------------
 
+describe("buildSeasonHistory — inningsPlayed filtering", () => {
+  it("excludes bench innings beyond inningsPlayed from totals", () => {
+    const players = makeRoster(11);
+    const assignments = generateGamePlan(
+      players, emptyHistory(), undefined, undefined, undefined,
+      { inningsCount: 6 },
+    );
+
+    const inningsPlayed = 4;
+    const filtered = assignments.filter((a) => a.inning <= inningsPlayed);
+    const history = buildSeasonHistory([filtered]);
+
+    for (const h of history) {
+      const benchInnings = filtered
+        .filter((a) => a.playerId === h.playerId && a.position === "BENCH")
+        .map((a) => a.inning);
+      expect(h.totalBenchInnings).toBe(benchInnings.length);
+      for (const inn of benchInnings) {
+        expect(inn).toBeLessThanOrEqual(inningsPlayed);
+      }
+    }
+  });
+
+  it("does not count positions from unplayed innings", () => {
+    const game = [
+      { playerId: "p1", inning: 1, position: "SS" },
+      { playerId: "p1", inning: 2, position: "3B" },
+      { playerId: "p1", inning: 3, position: "P" },
+      { playerId: "p1", inning: 4, position: "CF" },
+      { playerId: "p1", inning: 5, position: "LF" },
+      { playerId: "p1", inning: 6, position: "BENCH" },
+    ];
+
+    const inningsPlayed = 4;
+    const filtered = game.filter((a) => a.inning <= inningsPlayed);
+    const history = buildSeasonHistory([filtered]);
+    const p1 = history.find((h) => h.playerId === "p1")!;
+
+    expect(p1.positionCounts["SS"]).toBe(1);
+    expect(p1.positionCounts["3B"]).toBe(1);
+    expect(p1.positionCounts["P"]).toBe(1);
+    expect(p1.positionCounts["CF"]).toBe(1);
+    expect(p1.positionCounts["LF"]).toBeUndefined();
+    expect(p1.totalBenchInnings).toBe(0);
+    expect(p1.hasPitched).toBe(true);
+  });
+
+  it("does not mark bench-in-inning-1 for unplayed games", () => {
+    const game1 = [
+      { playerId: "p1", inning: 1, position: "SS" },
+      { playerId: "p1", inning: 2, position: "BENCH" },
+    ];
+    const game2 = [
+      { playerId: "p1", inning: 1, position: "BENCH" },
+      { playerId: "p1", inning: 2, position: "SS" },
+    ];
+
+    const inningsPlayed = 1;
+    const game2Filtered = game2.filter((a) => a.inning <= inningsPlayed);
+    const history = buildSeasonHistory([game1, game2Filtered]);
+    const p1 = history.find((h) => h.playerId === "p1")!;
+
+    expect(p1.startedOnBenchLastGame).toBe(true);
+    expect(p1.totalBenchInnings).toBe(2);
+  });
+
+  it("accumulates correct season totals across multiple shortened games", () => {
+    const game1 = [
+      { playerId: "p1", inning: 1, position: "P" },
+      { playerId: "p1", inning: 2, position: "SS" },
+      { playerId: "p1", inning: 3, position: "BENCH" },
+      { playerId: "p1", inning: 4, position: "CF" },
+    ];
+    const game2 = [
+      { playerId: "p1", inning: 1, position: "BENCH" },
+      { playerId: "p1", inning: 2, position: "3B" },
+      { playerId: "p1", inning: 3, position: "LF" },
+      { playerId: "p1", inning: 4, position: "SS" },
+    ];
+
+    const game1Played = 3;
+    const game2Played = 2;
+    const g1Filtered = game1.filter((a) => a.inning <= game1Played);
+    const g2Filtered = game2.filter((a) => a.inning <= game2Played);
+    const history = buildSeasonHistory([g1Filtered, g2Filtered]);
+    const p1 = history.find((h) => h.playerId === "p1")!;
+
+    expect(p1.positionCounts["P"]).toBe(1);
+    expect(p1.positionCounts["SS"]).toBe(1);
+    expect(p1.positionCounts["3B"]).toBe(1);
+    expect(p1.totalBenchInnings).toBe(2);
+    expect(p1.positionCounts["CF"]).toBeUndefined();
+    expect(p1.positionCounts["LF"]).toBeUndefined();
+    expect(p1.hasPitched).toBe(true);
+    expect(p1.startedOnBenchLastGame).toBe(true);
+  });
+});
+
 describe("buildSeasonHistory", () => {
   it("returns empty for no past games", () => {
     expect(buildSeasonHistory([])).toEqual([]);
