@@ -719,7 +719,7 @@ export default function BaseballField({
 
       {/* Screen-only content below */}
       {/* Title */}
-      <div className="text-center mb-4 no-print">
+      <div className={`text-center mb-4 no-print ${!showTableView ? "pr-[13.5rem]" : ""}`}>
         {editingGameInfo ? (
           <div className="inline-flex flex-col items-center gap-2">
             <div className="flex items-center gap-2">
@@ -853,7 +853,7 @@ export default function BaseballField({
         </div>
       )}
 
-      <div className="no-print flex justify-center mb-3">
+      <div className={`no-print flex justify-center mb-3 ${!showTableView ? "pr-[13.5rem]" : ""}`}>
         <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
           <button
             onClick={() => setShowTableView(false)}
@@ -871,7 +871,7 @@ export default function BaseballField({
       </div>
 
       {onInningsChange && (
-        <div className="no-print flex justify-center items-center gap-4 mb-3 text-sm text-gray-600">
+        <div className={`no-print flex justify-center items-center gap-4 mb-3 text-sm text-gray-600 ${!showTableView ? "pr-[13.5rem]" : ""}`}>
           <div className="flex items-center gap-1.5">
             <span className="font-medium">Innings:</span>
             <select
@@ -908,7 +908,7 @@ export default function BaseballField({
       )}
 
       {!isLocked && !showTableView && (
-        <p className="no-print text-xs text-gray-400 mb-2 text-center">Drag players between positions and innings to rearrange</p>
+        <p className="no-print text-xs text-gray-400 mb-2 text-center pr-[13.5rem]">Drag players between positions and innings to rearrange</p>
       )}
 
       {showTableView ? (
