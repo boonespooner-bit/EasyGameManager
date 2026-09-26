@@ -115,9 +115,12 @@ export async function POST(
     where: { teamId, isLocked: true },
     include: { innings: true },
   });
-  const pastAssignments = lockedGames.map((g) =>
-    g.innings.map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),
-  );
+  const pastAssignments = lockedGames.map((g) => {
+    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
+    return g.innings
+      .filter((i) => i.inning <= maxInning)
+      .map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position }));
+  });
   const seasonHistory = buildSeasonHistory(pastAssignments);
 
   const playersWithRatings = gamePlayers.map((p) => ({
@@ -127,9 +130,27 @@ export async function POST(
     ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
   }));
 
-  const newAssignments = generateGamePlan(playersWithRatings, seasonHistory);
+  // Preserve held positions, removing any for the excluded/removed player
+  const existingHeld = (game.heldPositions as { playerId: string; inning: number; position: string }[] | null) || [];
+  const availableIds = new Set(gamePlayers.map((p) => p.id));
+  const survivingHeld = existingHeld.filter((h) => availableIds.has(h.playerId));
 
-  // Save new assignments and clear held positions (roster changed, holds are stale)
+  const sandlotOn = !!game.sandlotRules;
+
+  const gameInnings = game.inningsPlanned ?? 6;
+  const newAssignments = generateGamePlan(
+    playersWithRatings,
+    seasonHistory,
+    undefined,
+    survivingHeld.length > 0 ? survivingHeld : undefined,
+    undefined,
+    {
+      disabledPositions: sandlotOn ? ((game.disabledPositions as string[] | null) ?? []) : [],
+      extraOutfielder: sandlotOn ? !!game.extraOutfielder : false,
+      inningsCount: gameInnings,
+    },
+  );
+
   await prisma.inningAssignment.deleteMany({ where: { gameId } });
   await prisma.inningAssignment.createMany({
     data: newAssignments.map((a) => ({
@@ -140,9 +161,10 @@ export async function POST(
     })),
   });
 
+  // Save surviving held positions (not the excluded player's)
   await prisma.game.update({
     where: { id: gameId },
-    data: { heldPositions: [] },
+    data: { heldPositions: survivingHeld },
   });
 
   return NextResponse.json({ success: true });

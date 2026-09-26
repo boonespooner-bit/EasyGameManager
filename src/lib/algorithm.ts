@@ -1,4 +1,4 @@
-import { INNINGS, activePositionsFor, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position, type HistoricalFrequency } from "@/types";
+import { INNINGS, getInningsArray, activePositionsFor, type PlayerWithRatings, type GameAssignment, type SeasonHistory, type Position, type HistoricalFrequency } from "@/types";
 
 const ALL_INFIELD: Position[] = ["3B", "SS", "2B", "1B"];
 const ALL_OUTFIELD: Position[] = ["LF", "CF", "RF", "LCF", "RCF"];
@@ -13,9 +13,10 @@ function ratingFor(player: PlayerWithRatings, position: string): number {
   return 1;
 }
 
-// Innings 1-2 and 5-6 face the best hitters; innings 3-4 face the weakest
-function inningImportance(inning: number): number {
-  if (inning <= 2 || inning >= 5) return 1.5;
+// First 2 and last 2 innings face the best hitters; middle innings face the weakest
+function inningImportance(inning: number, totalInnings: number = 6): number {
+  if (totalInnings <= 3) return 1.0;
+  if (inning <= 2 || inning > totalInnings - 2) return 1.5;
   return 0.8;
 }
 
@@ -25,7 +26,7 @@ export function generateGamePlan(
   lockedPitchers?: { playerId: string; inning: number }[],
   lockedPositions?: { playerId: string; inning: number; position: string }[],
   historicalFrequency?: HistoricalFrequency[],
-  options?: { disabledPositions?: string[]; extraOutfielder?: boolean },
+  options?: { disabledPositions?: string[]; extraOutfielder?: boolean; inningsCount?: number },
 ): GameAssignment[] {
   if (players.length === 0) {
     return [];
@@ -33,6 +34,8 @@ export function generateGamePlan(
 
   const extraOutfielder = options?.extraOutfielder ?? false;
   const disabledPositions = options?.disabledPositions ?? [];
+  const inningsCount = options?.inningsCount ?? 6;
+  const innings = getInningsArray(inningsCount);
   const activePositions = activePositionsFor(extraOutfielder, disabledPositions);
   const activeSet = new Set(activePositions);
   const pIsActive = activeSet.has("P");
@@ -67,7 +70,7 @@ export function generateGamePlan(
 
   // Build locked positions map: inning -> Map<playerId, position>
   const allLockedByInning = new Map<number, Map<string, string>>();
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     allLockedByInning.set(inning, new Map());
   }
   if (lockedPositions && lockedPositions.length > 0) {
@@ -78,7 +81,7 @@ export function generateGamePlan(
 
   // Build set of locked player+inning combos so bench scheduler avoids them
   const lockedPlayerInnings = new Map<number, Set<string>>(); // inning -> Set of playerIds
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     const playerIds = new Set<string>();
     const locked = allLockedByInning.get(inning)!;
     for (const playerId of locked.keys()) {
@@ -98,13 +101,13 @@ export function generateGamePlan(
 
   // Pre-assign who is benched each inning (if more than 9 players)
   let benchSchedule: Map<number, string[]> = new Map();
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     benchSchedule.set(inning, []);
   }
 
   // Check for locked BENCH positions
   const lockedBenchByInning = new Map<number, string[]>();
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     lockedBenchByInning.set(inning, []);
   }
   if (lockedPositions) {
@@ -127,12 +130,12 @@ export function generateGamePlan(
     const benchPerInning = numPlayers - numPositions;
     benchSchedule = assignBenchScheduleFlexible(
       players, historyMap, benchPerInning, lockedPitcherInnings,
-      lockedPlayerInnings, lockedBenchByInning, previousGameBenchStarters,
+      lockedPlayerInnings, lockedBenchByInning, previousGameBenchStarters, innings,
     );
   }
 
   // Add bench assignments
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     const benchedPlayerIds = benchSchedule.get(inning) || [];
     for (const playerId of benchedPlayerIds) {
       const player = players.find((p) => p.id === playerId)!;
@@ -147,7 +150,7 @@ export function generateGamePlan(
 
   // Build active players per inning
   const activeByInning = new Map<number, PlayerWithRatings[]>();
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     const benchedIds = benchSchedule.get(inning) || [];
     activeByInning.set(inning, players.filter((p) => !benchedIds.includes(p.id)));
   }
@@ -170,7 +173,7 @@ export function generateGamePlan(
     ? []
     : allLockedPitchers.length > 0
       ? allLockedPitchers
-      : planPitchingSchedule(players, activeByInning, historyMap, freqMap);
+      : planPitchingSchedule(players, activeByInning, historyMap, freqMap, innings);
 
   // Extract locked catcher positions
   const lockedCatcherPositions = lockedPositions
@@ -181,13 +184,13 @@ export function generateGamePlan(
   const catchingSchedule = !cIsActive
     ? []
     : planCatchingSchedule(
-        players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions, freqMap,
+        players, activeByInning, pitchingSchedule, historyMap, lockedCatcherPositions, freqMap, innings,
       );
 
   // Phase 3: Assign remaining positions inning by inning
   // Lock in pitcher and catcher assignments first
   const phaseLockedAssignments = new Map<number, Map<string, string>>(); // inning -> playerId -> position
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     phaseLockedAssignments.set(inning, new Map());
   }
 
@@ -210,7 +213,7 @@ export function generateGamePlan(
   }
 
   // Now assign remaining field positions for each inning
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     const active = activeByInning.get(inning) || [];
     const locked = phaseLockedAssignments.get(inning)!;
 
@@ -229,7 +232,7 @@ export function generateGamePlan(
     // Collect positions already filled by locked assignments
     const assignedPlayers = new Set(locked.keys());
     const filledPositions = new Set(locked.values());
-    const importance = inningImportance(inning);
+    const importance = inningImportance(inning, inningsCount);
 
     // Sort positions by number of eligible (non-DNP) players — most constrained first.
     // This prevents a greedy assignment from "stealing" the only eligible player
@@ -413,7 +416,7 @@ export function generateGamePlan(
     let swapped = false;
 
     // Find an inning where this player is at an outfield position (or P/C won't work, skip those)
-    for (const inning of INNINGS) {
+    for (const inning of innings) {
       if (swapped) break;
       const playerAssignment = assignments.find(
         (a) => a.playerId === player.id && a.inning === inning,
@@ -472,9 +475,9 @@ function planPitchingSchedule(
   activeByInning: Map<number, PlayerWithRatings[]>,
   historyMap: Map<string, SeasonHistory>,
   freqMap: Map<string, Map<string, Map<number, number>>> = new Map(),
+  innings: number[] = [...INNINGS],
 ): { playerId: string; inning: number }[] {
   const schedule: { playerId: string; inning: number }[] = [];
-  const innings = [...INNINGS]; // [1,2,3,4,5,6]
   const usedPitchers = new Set<string>();
 
   // Score each player for pitching (exclude DNP players with rating 0)
@@ -583,9 +586,9 @@ function planCatchingSchedule(
   historyMap: Map<string, SeasonHistory>,
   lockedCatchers: { playerId: string; inning: number }[] = [],
   freqMap: Map<string, Map<string, Map<number, number>>> = new Map(),
+  innings: number[] = [...INNINGS],
 ): { playerId: string; inning: number }[] {
   const schedule: { playerId: string; inning: number }[] = [];
-  const innings = [...INNINGS];
   const pitcherByInning = new Map<number, string>();
   for (const p of pitchingSchedule) {
     pitcherByInning.set(p.inning, p.playerId);
@@ -713,8 +716,9 @@ function assignBenchScheduleFlexible(
   lockedPlayerInnings: Map<number, Set<string>> = new Map(),
   lockedBenchByInning: Map<number, string[]> = new Map(),
   previousGameBenchStarters: Set<string> = new Set(),
+  innings: number[] = [...INNINGS],
 ): Map<number, string[]> {
-  const totalBenchSlots = benchPerInning * INNINGS.length;
+  const totalBenchSlots = benchPerInning * innings.length;
 
   // Calculate average rating for each player (used for bench priority)
   const playerAvgRating = new Map<string, number>();
@@ -765,7 +769,7 @@ function assignBenchScheduleFlexible(
   }));
 
   const benchSlots: Map<number, string[]> = new Map();
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     benchSlots.set(inning, []);
   }
 
@@ -787,7 +791,7 @@ function assignBenchScheduleFlexible(
   };
 
   // Pre-fill locked bench assignments
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     const lockedBench = lockedBenchByInning.get(inning) || [];
     const slots = benchSlots.get(inning)!;
     for (const playerId of lockedBench) {
@@ -810,10 +814,10 @@ function assignBenchScheduleFlexible(
 
     // If partially placed (1 locked), just find the second inning
     if (alreadyPlaced === 1) {
-      const placedInning = INNINGS.find((inn) => benchSlots.get(inn)!.includes(player.id));
+      const placedInning = innings.find((inn) => benchSlots.get(inn)!.includes(player.id));
       let bestInning = -1;
       let bestLoad = Infinity;
-      for (const inning of INNINGS) {
+      for (const inning of innings) {
         if (!canBenchIn(player.id, inning)) continue;
         // No consecutive bench
         if (placedInning !== undefined && Math.abs(inning - placedInning) === 1) continue;
@@ -834,10 +838,10 @@ function assignBenchScheduleFlexible(
     let bestPair: [number, number] | null = null;
     let bestScore = Infinity;
 
-    for (let i = 0; i < INNINGS.length; i++) {
-      for (let j = i + 1; j < INNINGS.length; j++) {
-        const inn1 = INNINGS[i];
-        const inn2 = INNINGS[j];
+    for (let i = 0; i < innings.length; i++) {
+      for (let j = i + 1; j < innings.length; j++) {
+        const inn1 = innings[i];
+        const inn2 = innings[j];
         // No consecutive bench innings
         if (inn2 - inn1 === 1) continue;
         if (!canBenchIn(player.id, inn1)) continue;
@@ -873,7 +877,7 @@ function assignBenchScheduleFlexible(
     let bestInning = -1;
     let bestScore = -Infinity;
 
-    for (const inning of INNINGS) {
+    for (const inning of innings) {
       if (!canBenchIn(player.id, inning)) continue;
 
       const slots = benchSlots.get(inning)!;
@@ -903,7 +907,7 @@ function assignBenchScheduleFlexible(
 
   // --- Phase 3: Fill any remaining empty slots ---
   // Some slots might still be unfilled if constraints prevented placement above.
-  for (const inning of INNINGS) {
+  for (const inning of innings) {
     const slots = benchSlots.get(inning)!;
     const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
 
@@ -974,7 +978,7 @@ function assignBenchScheduleFlexible(
   for (const unbenched of unbenchedPlayers) {
     let swapped = false;
 
-    for (const inning of INNINGS) {
+    for (const inning of innings) {
       if (swapped) break;
       const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
       if (lockedInThisInning.has(unbenched.id)) continue;
@@ -998,7 +1002,7 @@ function assignBenchScheduleFlexible(
     }
 
     if (!swapped) {
-      for (const inning of INNINGS) {
+      for (const inning of innings) {
         if (swapped) break;
         const lockedInThisInning = lockedPlayerInnings.get(inning) || new Set<string>();
         if (lockedInThisInning.has(unbenched.id)) continue;

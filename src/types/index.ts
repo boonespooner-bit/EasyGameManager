@@ -21,6 +21,11 @@ export function activePositionsFor(
 export const INNINGS = [1, 2, 3, 4, 5, 6] as const;
 export type Inning = (typeof INNINGS)[number];
 
+export const MAX_INNINGS = 9;
+export function getInningsArray(count: number): number[] {
+  return Array.from({ length: count }, (_, i) => i + 1);
+}
+
 export interface PlayerWithRatings {
   id: string;
   name: string;

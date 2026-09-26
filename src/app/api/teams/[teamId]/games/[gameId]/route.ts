@@ -142,22 +142,30 @@ export async function GET(
     // Defensive
   }
 
-  // Season bench totals: across all games before this one
+  // Season bench totals: across all games before this one (respecting inningsPlayed)
   let seasonBenchTotals: { playerName: string; count: number }[] = [];
   try {
+    const priorGamesForHistory = await prisma.game.findMany({
+      where: {
+        teamId: game.teamId,
+        date: { lt: game.date },
+        id: { not: game.id },
+      },
+      select: { id: true, inningsPlayed: true, inningsPlanned: true },
+    });
+    const priorGameMap = new Map(priorGamesForHistory.map((g) => [g.id, g]));
     const priorBenchAssignments = await prisma.inningAssignment.findMany({
       where: {
         position: "BENCH",
-        game: {
-          teamId: game.teamId,
-          date: { lt: game.date },
-          id: { not: game.id },
-        },
+        gameId: { in: priorGamesForHistory.map((g) => g.id) },
       },
       include: { player: { select: { id: true, name: true, firstName: true } } },
     });
     const counts = new Map<string, { playerName: string; count: number }>();
     for (const a of priorBenchAssignments) {
+      const pg = priorGameMap.get(a.gameId);
+      const maxInning = pg?.inningsPlayed ?? pg?.inningsPlanned ?? 6;
+      if (a.inning > maxInning) continue;
       const playerName = a.player.firstName || a.player.name.split(" ")[0];
       const entry = counts.get(a.player.id) || { playerName, count: 0 };
       entry.count++;
@@ -176,9 +184,11 @@ export async function GET(
     gameBattingOrder,
     gameBalls,
     heldPositions: game.heldPositions ?? [],
-    sandlotRules: (game as unknown as { sandlotRules?: boolean }).sandlotRules ?? false,
-    extraOutfielder: (game as unknown as { extraOutfielder?: boolean }).extraOutfielder ?? false,
-    disabledPositions: (game as unknown as { disabledPositions?: string[] }).disabledPositions ?? [],
+    sandlotRules: game.sandlotRules ?? false,
+    extraOutfielder: game.extraOutfielder ?? false,
+    disabledPositions: game.disabledPositions ?? [],
+    inningsPlanned: game.inningsPlanned ?? 6,
+    inningsPlayed: game.inningsPlayed ?? null,
     previousGameBench,
     previousGameBenchTotals,
     seasonBenchTotals,
@@ -214,6 +224,8 @@ export async function PUT(
   if (body.sandlotRules !== undefined) data.sandlotRules = !!body.sandlotRules;
   if (body.extraOutfielder !== undefined) data.extraOutfielder = !!body.extraOutfielder;
   if (body.disabledPositions !== undefined) data.disabledPositions = body.disabledPositions;
+  if (body.inningsPlanned !== undefined) data.inningsPlanned = body.inningsPlanned;
+  if (body.inningsPlayed !== undefined) data.inningsPlayed = body.inningsPlayed;
 
   // Try full update; fall back gracefully if sandlot columns don't exist yet.
   let game;

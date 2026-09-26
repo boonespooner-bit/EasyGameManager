@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from "react";
 import BaseballField from "@/components/BaseballField";
 import Link from "next/link";
 import type { FieldPosition } from "@/types";
-import { INNINGS, POSITIONS } from "@/types";
+import { POSITIONS, getInningsArray } from "@/types";
 
 interface Assignment {
   playerId: string;
@@ -53,6 +53,8 @@ interface GameData {
   sandlotRules?: boolean;
   extraOutfielder?: boolean;
   disabledPositions?: string[];
+  inningsPlanned?: number;
+  inningsPlayed?: number | null;
 }
 
 export default function GamePlanPage() {
@@ -81,6 +83,7 @@ export default function GamePlanPage() {
   } | null>(null);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [rosterUpdating, setRosterUpdating] = useState<string | null>(null);
+  const [absentDropdownId, setAbsentDropdownId] = useState<string | null>(null);
   const [showPoolForm, setShowPoolForm] = useState(false);
   const [poolName, setPoolName] = useState("");
   const [poolRatings, setPoolRatings] = useState<Record<string, number>>(() => {
@@ -96,6 +99,7 @@ export default function GamePlanPage() {
   const [sandlotOpen, setSandlotOpen] = useState(false);
   const [savingSandlot, setSavingSandlot] = useState(false);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
+  const [teamGames, setTeamGames] = useState<{ id: string; opponent: string; date: string; isLocked: boolean }[]>([]);
 
   const fetchGame = useCallback(async (restoreHeldPositions = true) => {
     const res = await fetch(`/api/teams/${teamId}/games/${gameId}`);
@@ -145,8 +149,29 @@ export default function GamePlanPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
-    if (status === "authenticated") fetchGame();
-  }, [status, router, fetchGame]);
+    if (status === "authenticated") {
+      fetchGame();
+      fetch(`/api/teams/${teamId}/games`).then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setTeamGames(
+            data
+              .filter((g: { id: string }) => g.id !== gameId)
+              .map((g: { id: string; opponent: string; date: string; isLocked: boolean }) => ({
+                id: g.id, opponent: g.opponent, date: g.date, isLocked: g.isLocked,
+              })),
+          );
+        }
+      });
+    }
+  }, [status, router, fetchGame, teamId, gameId]);
+
+  useEffect(() => {
+    if (!absentDropdownId) return;
+    const close = () => setAbsentDropdownId(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [absentDropdownId]);
 
   const handleUpdate = async (updated: Assignment[]) => {
     setAssignments(updated);
@@ -205,9 +230,11 @@ export default function GamePlanPage() {
     setSaving(false);
   };
 
+  const innings = getInningsArray(game?.inningsPlanned ?? 6);
+
   // Get current pitchers from assignments
   const getCurrentPitchers = () => {
-    return INNINGS.map((inning) => {
+    return innings.map((inning) => {
       const a = assignments.find((a) => a.position === "P" && a.inning === inning);
       return { inning, playerId: a?.playerId || null, playerName: a?.playerName || null };
     });
@@ -494,6 +521,34 @@ export default function GamePlanPage() {
     await fetchGame();
   };
 
+  const handleNavigateToGame = (targetGameId: string) => {
+    router.push(`/team/${teamId}/games/${targetGameId}`);
+  };
+
+  const handleInningsChange = async (planned: number, played: number | null) => {
+    const plannedChanged = planned !== (game?.inningsPlanned ?? 6);
+    setGame((prev) => prev ? { ...prev, inningsPlanned: planned, inningsPlayed: played } : prev);
+    setSaving(true);
+    await fetch(`/api/teams/${teamId}/games/${gameId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ inningsPlanned: planned, inningsPlayed: played }),
+    });
+    if (plannedChanged) {
+      setRegenerating(true);
+      await fetch(`/api/teams/${teamId}/games/${gameId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lockedPositions: heldPositions,
+        }),
+      });
+      setRegenerating(false);
+      await fetchGame(false);
+    }
+    setSaving(false);
+  };
+
   const handleRosterToggle = async (playerId: string, action: "exclude" | "include") => {
     setRosterUpdating(playerId);
     await fetch(`/api/teams/${teamId}/games/${gameId}/roster`, {
@@ -501,7 +556,11 @@ export default function GamePlanPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, playerId }),
     });
-    setHeldPositions([]);
+    if (action === "exclude") {
+      const surviving = heldPositions.filter((h) => h.playerId !== playerId);
+      setHeldPositions(surviving);
+      saveHeldPositions(surviving);
+    }
     await fetchGame();
     setRosterUpdating(null);
   };
@@ -519,7 +578,6 @@ export default function GamePlanPage() {
     POSITIONS.forEach((p) => (r[p] = 5));
     setPoolRatings(r);
     setShowPoolForm(false);
-    setHeldPositions([]);
     await fetchGame();
     setRosterUpdating(null);
   };
@@ -531,7 +589,9 @@ export default function GamePlanPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "removePool", playerId }),
     });
-    setHeldPositions([]);
+    const surviving = heldPositions.filter((h) => h.playerId !== playerId);
+    setHeldPositions(surviving);
+    saveHeldPositions(surviving);
     await fetchGame();
     setRosterUpdating(null);
   };
@@ -822,12 +882,54 @@ export default function GamePlanPage() {
       {((game.exclusions && game.exclusions.length > 0) || (game.poolPlayers && game.poolPlayers.length > 0)) && (
         <div className="no-print flex flex-wrap gap-2 mb-3 text-xs">
           {game.exclusions && game.exclusions.length > 0 && (
-            <span className="bg-red-50 text-red-700 px-2 py-1 rounded">
-              Absent: {game.exclusions.map((e) => {
+            <>
+              <span className="text-red-700 font-medium px-1 py-1">Absent:</span>
+              {[...game.exclusions].sort((a, b) => {
+                const pa = game!.team.players.find((p) => p.id === a.playerId);
+                const pb = game!.team.players.find((p) => p.id === b.playerId);
+                const lastA = (pa?.lastName || pa?.name?.split(" ").slice(-1)[0] || "").toLowerCase();
+                const lastB = (pb?.lastName || pb?.name?.split(" ").slice(-1)[0] || "").toLowerCase();
+                return lastA.localeCompare(lastB);
+              }).map((e) => {
                 const player = game!.team.players.find((p) => p.id === e.playerId);
-                return player?.name || "Unknown";
-              }).join(", ")}
-            </span>
+                const name = player?.name || "Unknown";
+                return (
+                  <span key={e.playerId} className="relative inline-flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded">
+                    {!game!.isLocked ? (
+                      <>
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); setAbsentDropdownId(absentDropdownId === e.playerId ? null : e.playerId); }}
+                          disabled={!!rosterUpdating}
+                          className="w-2.5 h-2.5 rounded-full bg-red-400 hover:bg-red-500 flex-shrink-0 cursor-pointer disabled:opacity-50"
+                          title="Player status"
+                        />
+                        <span className="hover:text-red-900 cursor-pointer" onClick={(ev) => { ev.stopPropagation(); setAbsentDropdownId(absentDropdownId === e.playerId ? null : e.playerId); }}>
+                          {name}
+                        </span>
+                        {absentDropdownId === e.playerId && (
+                          <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 text-sm min-w-[120px]">
+                            <button
+                              className="w-full text-left px-3 py-1.5 text-gray-600 hover:bg-green-50 hover:text-green-700 flex items-center gap-2"
+                              onClick={() => { setAbsentDropdownId(null); handleRosterToggle(e.playerId, "include"); }}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-green-400" /> Playing
+                            </button>
+                            <button className="w-full text-left px-3 py-1.5 text-red-700 bg-red-50 font-medium flex items-center gap-2" disabled>
+                              <span className="w-2 h-2 rounded-full bg-red-400" /> Absent
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
+                        {name}
+                      </>
+                    )}
+                  </span>
+                );
+              })}
+            </>
           )}
           {game.poolPlayers && game.poolPlayers.length > 0 && (
             <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded">
@@ -1198,7 +1300,7 @@ export default function GamePlanPage() {
                 <thead>
                   <tr className="bg-gray-50">
                     <th className="text-left p-2 border border-gray-200 font-semibold text-gray-600 w-16">Pos</th>
-                    {INNINGS.map((inn) => (
+                    {innings.map((inn) => (
                       <th key={inn} className="text-center p-2 border border-gray-200 font-semibold text-gray-600">
                         Inn {inn}
                       </th>
@@ -1209,7 +1311,7 @@ export default function GamePlanPage() {
                   {["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"].map((pos) => (
                     <tr key={pos} className={pos === "P" || pos === "C" ? "bg-amber-50/50" : ""}>
                       <td className="p-2 border border-gray-200 font-semibold text-gray-700">{pos}</td>
-                      {INNINGS.map((inn) => {
+                      {innings.map((inn) => {
                         const a = suggestedAssignments.find(
                           (s) => s.inning === inn && s.position === pos,
                         );
@@ -1223,7 +1325,7 @@ export default function GamePlanPage() {
                   ))}
                   <tr className="bg-gray-50/50">
                     <td className="p-2 border border-gray-200 font-semibold text-gray-500">Bench</td>
-                    {INNINGS.map((inn) => {
+                    {innings.map((inn) => {
                       const benched = suggestedAssignments.filter(
                         (s) => s.inning === inn && s.position === "BENCH",
                       );
@@ -1275,6 +1377,12 @@ export default function GamePlanPage() {
         sandlotRules={game.sandlotRules}
         extraOutfielder={game.extraOutfielder}
         disabledPositions={game.disabledPositions}
+        inningsPlanned={game.inningsPlanned ?? 6}
+        inningsPlayed={game.inningsPlayed ?? null}
+        onInningsChange={handleInningsChange}
+        onPlayerAbsent={!game.isLocked ? (playerId) => handleRosterToggle(playerId, "exclude") : undefined}
+        teamGames={teamGames}
+        onNavigateToGame={handleNavigateToGame}
       />
     </div>
   );

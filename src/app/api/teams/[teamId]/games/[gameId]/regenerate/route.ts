@@ -62,9 +62,12 @@ export async function POST(
     where: { teamId, isLocked: true },
     include: { innings: true },
   });
-  const pastAssignments = lockedGames.map((g) =>
-    g.innings.map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),
-  );
+  const pastAssignments = lockedGames.map((g) => {
+    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
+    return g.innings
+      .filter((i) => i.inning <= maxInning)
+      .map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position }));
+  });
   const seasonHistory = buildSeasonHistory(pastAssignments);
 
   const playersWithRatings = gamePlayers.map((p) => ({
@@ -74,14 +77,9 @@ export async function POST(
     ratings: p.ratings.map((r) => ({ position: r.position, rating: r.rating })),
   }));
 
-  const gameWithSandlot = game as unknown as {
-    sandlotRules?: boolean;
-    extraOutfielder?: boolean;
-    disabledPositions?: string[] | null;
-  };
-  const sandlotOn = !!gameWithSandlot.sandlotRules;
+  const sandlotOn = !!game.sandlotRules;
 
-  // Regenerate with locked pitchers and locked positions
+  const gameInnings = game.inningsPlanned ?? 6;
   const newAssignments = generateGamePlan(
     playersWithRatings,
     seasonHistory,
@@ -89,8 +87,9 @@ export async function POST(
     lockedPositions.length > 0 ? lockedPositions : undefined,
     undefined,
     {
-      disabledPositions: sandlotOn ? (gameWithSandlot.disabledPositions ?? []) : [],
-      extraOutfielder: sandlotOn ? !!gameWithSandlot.extraOutfielder : false,
+      disabledPositions: sandlotOn ? ((game.disabledPositions as string[] | null) ?? []) : [],
+      extraOutfielder: sandlotOn ? !!game.extraOutfielder : false,
+      inningsCount: gameInnings,
     },
   );
 

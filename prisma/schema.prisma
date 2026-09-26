@@ -118,6 +118,8 @@ model Game {
   sandlotRules      Boolean            @default(false)
   disabledPositions Json?
   extraOutfielder   Boolean            @default(false)
+  inningsPlanned    Int                @default(6)
+  inningsPlayed     Int?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)

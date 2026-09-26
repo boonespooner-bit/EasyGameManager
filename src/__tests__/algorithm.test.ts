@@ -360,6 +360,125 @@ describe("generateGamePlan", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Configurable innings
+  // -------------------------------------------------------------------------
+
+  describe("configurable innings", () => {
+    it("generates correct assignments for a 4-inning game", () => {
+      const players = makeRoster(9);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 4 },
+      );
+
+      const innings = [1, 2, 3, 4];
+      for (const inning of innings) {
+        const inningAssignments = assignments.filter((a) => a.inning === inning);
+        expect(inningAssignments).toHaveLength(9);
+      }
+      expect(assignments.filter((a) => a.inning === 5)).toHaveLength(0);
+      expect(assignments.filter((a) => a.inning === 6)).toHaveLength(0);
+    });
+
+    it("generates correct assignments for an 8-inning game", () => {
+      const players = makeRoster(9);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 8 },
+      );
+
+      for (let inning = 1; inning <= 8; inning++) {
+        const positions = assignments
+          .filter((a) => a.inning === inning)
+          .map((a) => a.position)
+          .sort();
+        expect(positions).toEqual([...POSITIONS].sort());
+      }
+      expect(assignments).toHaveLength(9 * 8);
+    });
+
+    it("fills every position each inning in a 3-inning game", () => {
+      const players = makeRoster(9);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 3 },
+      );
+
+      for (let inning = 1; inning <= 3; inning++) {
+        const positions = assignments
+          .filter((a) => a.inning === inning)
+          .map((a) => a.position)
+          .sort();
+        expect(positions).toEqual([...POSITIONS].sort());
+      }
+      expect(assignments).toHaveLength(9 * 3);
+    });
+
+    it("benches correctly with non-6 innings", () => {
+      const players = makeRoster(11);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 5 },
+      );
+
+      for (let inning = 1; inning <= 5; inning++) {
+        const benched = assignments.filter(
+          (a) => a.inning === inning && a.position === "BENCH",
+        );
+        expect(benched).toHaveLength(2);
+        const field = assignments.filter(
+          (a) => a.inning === inning && a.position !== "BENCH",
+        );
+        expect(field).toHaveLength(9);
+      }
+    });
+
+    it("limits bench to 2 innings in a short game", () => {
+      const players = makeRoster(11);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 4 },
+      );
+
+      for (const player of players) {
+        const benchCount = benchInningsForPlayer(assignments, player.id).length;
+        expect(benchCount).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it("does not bench consecutively in a longer game", () => {
+      const players = makeRoster(11);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 8 },
+      );
+
+      for (const player of players) {
+        const benchInnings = benchInningsForPlayer(assignments, player.id).sort();
+        for (let i = 1; i < benchInnings.length; i++) {
+          expect(benchInnings[i] - benchInnings[i - 1]).toBeGreaterThan(1);
+        }
+      }
+    });
+
+    it("gives every player an assignment every inning in a 7-inning game", () => {
+      const players = makeRoster(12);
+      const assignments = generateGamePlan(
+        players, emptyHistory(), undefined, undefined, undefined,
+        { inningsCount: 7 },
+      );
+
+      const expectedInnings = [1, 2, 3, 4, 5, 6, 7];
+      for (const player of players) {
+        const playerInnings = assignmentsForPlayer(assignments, player.id)
+          .map((a) => a.inning)
+          .sort((a, b) => a - b);
+        expect(playerInnings).toEqual(expectedInnings);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Position variety
   // -------------------------------------------------------------------------
 
@@ -382,6 +501,104 @@ describe("generateGamePlan", () => {
 // ---------------------------------------------------------------------------
 // buildSeasonHistory
 // ---------------------------------------------------------------------------
+
+describe("buildSeasonHistory — inningsPlayed filtering", () => {
+  it("excludes bench innings beyond inningsPlayed from totals", () => {
+    const players = makeRoster(11);
+    const assignments = generateGamePlan(
+      players, emptyHistory(), undefined, undefined, undefined,
+      { inningsCount: 6 },
+    );
+
+    const inningsPlayed = 4;
+    const filtered = assignments.filter((a) => a.inning <= inningsPlayed);
+    const history = buildSeasonHistory([filtered]);
+
+    for (const h of history) {
+      const benchInnings = filtered
+        .filter((a) => a.playerId === h.playerId && a.position === "BENCH")
+        .map((a) => a.inning);
+      expect(h.totalBenchInnings).toBe(benchInnings.length);
+      for (const inn of benchInnings) {
+        expect(inn).toBeLessThanOrEqual(inningsPlayed);
+      }
+    }
+  });
+
+  it("does not count positions from unplayed innings", () => {
+    const game = [
+      { playerId: "p1", inning: 1, position: "SS" },
+      { playerId: "p1", inning: 2, position: "3B" },
+      { playerId: "p1", inning: 3, position: "P" },
+      { playerId: "p1", inning: 4, position: "CF" },
+      { playerId: "p1", inning: 5, position: "LF" },
+      { playerId: "p1", inning: 6, position: "BENCH" },
+    ];
+
+    const inningsPlayed = 4;
+    const filtered = game.filter((a) => a.inning <= inningsPlayed);
+    const history = buildSeasonHistory([filtered]);
+    const p1 = history.find((h) => h.playerId === "p1")!;
+
+    expect(p1.positionCounts["SS"]).toBe(1);
+    expect(p1.positionCounts["3B"]).toBe(1);
+    expect(p1.positionCounts["P"]).toBe(1);
+    expect(p1.positionCounts["CF"]).toBe(1);
+    expect(p1.positionCounts["LF"]).toBeUndefined();
+    expect(p1.totalBenchInnings).toBe(0);
+    expect(p1.hasPitched).toBe(true);
+  });
+
+  it("does not mark bench-in-inning-1 for unplayed games", () => {
+    const game1 = [
+      { playerId: "p1", inning: 1, position: "SS" },
+      { playerId: "p1", inning: 2, position: "BENCH" },
+    ];
+    const game2 = [
+      { playerId: "p1", inning: 1, position: "BENCH" },
+      { playerId: "p1", inning: 2, position: "SS" },
+    ];
+
+    const inningsPlayed = 1;
+    const game2Filtered = game2.filter((a) => a.inning <= inningsPlayed);
+    const history = buildSeasonHistory([game1, game2Filtered]);
+    const p1 = history.find((h) => h.playerId === "p1")!;
+
+    expect(p1.startedOnBenchLastGame).toBe(true);
+    expect(p1.totalBenchInnings).toBe(2);
+  });
+
+  it("accumulates correct season totals across multiple shortened games", () => {
+    const game1 = [
+      { playerId: "p1", inning: 1, position: "P" },
+      { playerId: "p1", inning: 2, position: "SS" },
+      { playerId: "p1", inning: 3, position: "BENCH" },
+      { playerId: "p1", inning: 4, position: "CF" },
+    ];
+    const game2 = [
+      { playerId: "p1", inning: 1, position: "BENCH" },
+      { playerId: "p1", inning: 2, position: "3B" },
+      { playerId: "p1", inning: 3, position: "LF" },
+      { playerId: "p1", inning: 4, position: "SS" },
+    ];
+
+    const game1Played = 3;
+    const game2Played = 2;
+    const g1Filtered = game1.filter((a) => a.inning <= game1Played);
+    const g2Filtered = game2.filter((a) => a.inning <= game2Played);
+    const history = buildSeasonHistory([g1Filtered, g2Filtered]);
+    const p1 = history.find((h) => h.playerId === "p1")!;
+
+    expect(p1.positionCounts["P"]).toBe(1);
+    expect(p1.positionCounts["SS"]).toBe(1);
+    expect(p1.positionCounts["3B"]).toBe(1);
+    expect(p1.totalBenchInnings).toBe(2);
+    expect(p1.positionCounts["CF"]).toBeUndefined();
+    expect(p1.positionCounts["LF"]).toBeUndefined();
+    expect(p1.hasPitched).toBe(true);
+    expect(p1.startedOnBenchLastGame).toBe(true);
+  });
+});
 
 describe("buildSeasonHistory", () => {
   it("returns empty for no past games", () => {
