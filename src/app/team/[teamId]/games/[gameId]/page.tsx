@@ -343,9 +343,13 @@ export default function GamePlanPage() {
       );
       if (isCurrentPositionHeld) {
         // The player is locked at another position — show swap dialog
-        const currentPlayerAtTarget = assignments.find(
-          (a) => a.inning === inning && a.position === position,
-        );
+        const currentPlayerAtTarget = replacingPlayerId
+          ? assignments.find(
+              (a) => a.inning === inning && a.position === position && a.playerId === replacingPlayerId,
+            )
+          : assignments.find(
+              (a) => a.inning === inning && a.position === position,
+            );
         const player = game?.team.players.find((p) => p.id === playerId);
         setSwapDialog({
           inning,
@@ -367,9 +371,13 @@ export default function GamePlanPage() {
     );
     if (targetHeld && playerCurrentAssignment) {
       const player = game?.team.players.find((p) => p.id === playerId);
-      const currentPlayerAtTarget = assignments.find(
-        (a) => a.inning === inning && a.position === position,
-      );
+      const currentPlayerAtTarget = replacingPlayerId
+        ? assignments.find(
+            (a) => a.inning === inning && a.position === position && a.playerId === replacingPlayerId,
+          )
+        : assignments.find(
+            (a) => a.inning === inning && a.position === position,
+          );
       setSwapDialog({
         inning,
         targetPosition: position,
