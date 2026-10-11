@@ -755,8 +755,6 @@ export default function GamePlanPage() {
     return <div className="flex items-center justify-center py-20 text-gray-400">Loading...</div>;
   }
 
-  const currentPitchers = getCurrentPitchers();
-
   // Get all active players for this game (for the pitcher picker)
   const excludedIds = new Set((game.exclusions || []).map((e) => e.playerId));
   const activePlayers = game.team.players.filter(

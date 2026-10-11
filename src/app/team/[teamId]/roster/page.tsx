@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { POSITIONS } from "@/types";
 import { parseNames } from "@/lib/parseNames";
 import Link from "next/link";

@@ -4,7 +4,6 @@ import {
   validateExportData,
   buildImportPlan,
   resolvePlayerNames,
-  type ExportData,
 } from "@/lib/teamData";
 
 function makeDbTeam() {
