@@ -265,7 +265,7 @@ export default function BaseballField({
       if (candidates.length > 0) suggestions.push(candidates[0]);
     }
     return suggestions;
-  }, [notSatPlayers, assignments, ratingLookup, benchCountMap, skippedSwaps]);
+  }, [notSatPlayers, assignments, innings, ratingLookup, benchCountMap, skippedSwaps]);
 
   const approveSwap = (s: (typeof sitSuggestions)[number]) => {
     if (!onUpdate) return;

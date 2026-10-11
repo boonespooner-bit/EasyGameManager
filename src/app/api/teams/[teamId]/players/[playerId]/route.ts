@@ -30,7 +30,7 @@ export async function PUT(
   }
   if (jerseyNumber !== undefined) nameData.jerseyNumber = jerseyNumber || null;
 
-  const player = await prisma.player.update({
+  await prisma.player.update({
     where: { id: playerId },
     data: {
       ...nameData,
