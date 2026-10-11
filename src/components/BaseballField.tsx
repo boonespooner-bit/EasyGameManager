@@ -74,6 +74,11 @@ const POSITION_COORDS: Record<string, { x: number; y: number }> = {
   RCF: { x: 65, y: 15 },
 };
 
+// Picker search: match players whose displayed (first) name starts with the typed text
+function matchesPlayerSearch(p: { name: string; firstName?: string }, search: string): boolean {
+  return (p.firstName || p.name).toLowerCase().startsWith(search.trim().toLowerCase());
+}
+
 export default function BaseballField({
   assignments,
   battingOrder,
@@ -1142,10 +1147,7 @@ export default function BaseballField({
                 const canEditBench = !isLocked && !!allPlayers && !!onPositionChange && !isUnplayedInning;
                 const benchFiltered = isBenchEditing
                   ? (benchSearch.trim()
-                    ? (allPlayers || []).filter((p) => {
-                        const s = benchSearch.toLowerCase();
-                        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
-                      })
+                    ? (allPlayers || []).filter((p) => matchesPlayerSearch(p, benchSearch))
                     : allPlayers || [])
                   : [];
                 return (
@@ -1567,10 +1569,7 @@ function PitcherBox({
   });
 
   const filtered = search.trim()
-    ? eligiblePitchers.filter((p) => {
-        const s = search.toLowerCase();
-        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
-      })
+    ? eligiblePitchers.filter((p) => matchesPlayerSearch(p, search))
     : eligiblePitchers;
 
   const selectPlayer = (inning: number, playerId: string) => {
@@ -1719,10 +1718,7 @@ function PositionBox({
   });
 
   const filtered = search.trim()
-    ? eligiblePlayers.filter((p) => {
-        const s = search.toLowerCase();
-        return p.name.toLowerCase().includes(s) || (p.firstName || "").toLowerCase().includes(s);
-      })
+    ? eligiblePlayers.filter((p) => matchesPlayerSearch(p, search))
     : eligiblePlayers;
 
   const selectPlayer = (inning: number, playerId: string) => {
