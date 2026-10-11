@@ -1363,7 +1363,10 @@ export default function GamePlanPage() {
         onUpdate={handleUpdate}
         onBattingOrderUpdate={handleBattingOrderUpdate}
         pitchingMode={pitchingMode}
-        allPlayers={activePlayers.map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name, firstName: p.firstName || p.name.split(" ")[0], ratings: p.ratings }))}
+        allPlayers={activePlayers
+          .map((p) => ({ id: p.id, name: p.isPoolPlayer ? `${p.name} (pool)` : p.name, firstName: p.firstName || p.name.split(" ")[0], ratings: p.ratings }))
+          // Pickers display first names, so sort by first name (then full name to break ties)
+          .sort((a, b) => a.firstName.localeCompare(b.firstName) || a.name.localeCompare(b.name))}
         onPitcherChange={handlePitcherChange}
         onPositionChange={handlePositionChange}
         onPositionUnassign={handlePositionUnassign}
