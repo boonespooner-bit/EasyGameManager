@@ -891,7 +891,7 @@ function assignBenchScheduleFlexible(
       // +20 per 2-inning player already here (prefer mixing with 2-inning players)
       // -15 per 1-inning player already here (avoid clustering 1-inning players)
       // +5 per remaining slot (prefer less-full innings)
-      let score = twoCount * 20 - oneCount * 15 + slotsRemaining * 5;
+      const score = twoCount * 20 - oneCount * 15 + slotsRemaining * 5;
 
       if (score > bestScore) {
         bestScore = score;
