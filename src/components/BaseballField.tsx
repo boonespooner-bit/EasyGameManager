@@ -1398,7 +1398,7 @@ export default function BaseballField({
           {!isLocked && onBattingOrderUpdate && (
             <p className="text-xs text-gray-400 mb-1">Drag to reorder</p>
           )}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
             {battingOrder.map((b, idx) => (
               <div
                 key={b.playerId}
