@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { countPlayedPositions } from "@/lib/playedInnings";
 
 export async function GET(
   _req: NextRequest,
@@ -56,18 +57,11 @@ export async function GET(
     select: {
       inningsPlayed: true,
       inningsPlanned: true,
-      innings: { where: { position: "P" }, select: { playerId: true, inning: true } },
+      innings: { where: { position: "P" }, select: { playerId: true, inning: true, position: true } },
     },
   });
-  const pitchMap: Record<string, number> = {};
-  for (const g of lockedGames) {
-    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
-    for (const i of g.innings) {
-      if (i.inning > maxInning) continue;
-      pitchMap[i.playerId] = (pitchMap[i.playerId] || 0) + 1;
-    }
-  }
-  const pitchingInnings = Object.entries(pitchMap).map(([playerId, count]) => ({ playerId, count }));
+  const pitchingInnings = Object.entries(countPlayedPositions(lockedGames))
+    .map(([playerId, counts]) => ({ playerId, count: counts.P }));
 
   return NextResponse.json({ ...filtered, gameBallCounts, pitchingInnings });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { countPlayedPositions } from "@/lib/playedInnings";
 
 export async function GET(
   _req: NextRequest,
@@ -30,16 +31,9 @@ export async function GET(
     orderBy: { date: "asc" },
   });
 
+  const counts = countPlayedPositions(games);
   const playerStats: Record<string, Record<string, number>> = {};
-  for (const p of players) playerStats[p.id] = {};
-  for (const g of games) {
-    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
-    for (const i of g.innings) {
-      if (i.inning > maxInning) continue;
-      if (!playerStats[i.playerId]) continue;
-      playerStats[i.playerId][i.position] = (playerStats[i.playerId][i.position] || 0) + 1;
-    }
-  }
+  for (const p of players) playerStats[p.id] = counts[p.id] || {};
 
   return NextResponse.json({
     players,
