@@ -35,6 +35,7 @@ interface Team {
   players: Player[];
   members: TeamMember[];
   gameBallCounts?: { playerId: string; count: number }[];
+  pitchingInnings?: { playerId: string; count: number }[];
 }
 
 export default function RosterPage() {
@@ -304,9 +305,17 @@ export default function RosterPage() {
 
       {/* Pitching Tracker */}
       {sortedPlayers.length > 0 && (() => {
-        const pitchedCount = sortedPlayers.filter((p) => pitchingToggles[p.id]).length;
-        const notYet = sortedPlayers.filter((p) => !pitchingToggles[p.id]);
-        const hasPitched = sortedPlayers.filter((p) => pitchingToggles[p.id]);
+        // Innings pitched comes from locked games; the manual checkbox covers pitching
+        // the app doesn't know about (e.g. games played before the team started using it)
+        const inningsPitched = new Map(
+          (team?.pitchingInnings || []).map((g) => [g.playerId, g.count]),
+        );
+        const pitched = (p: Player) => (inningsPitched.get(p.id) || 0) > 0 || pitchingToggles[p.id];
+        const notYet = sortedPlayers.filter((p) => !pitched(p));
+        const hasPitched = sortedPlayers
+          .filter(pitched)
+          .sort((a, b) => (inningsPitched.get(b.id) || 0) - (inningsPitched.get(a.id) || 0));
+        const pitchedCount = hasPitched.length;
         return (
           <div className="mt-8">
             <div className="flex items-center gap-3 mb-3">
@@ -355,22 +364,41 @@ export default function RosterPage() {
                     Has pitched ({hasPitched.length})
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                    {hasPitched.map((p) => (
-                      <label
-                        key={p.id}
-                        className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-green-100 bg-green-50 hover:bg-green-100 transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={true}
-                          onChange={() => handlePitchedToggle(p.id)}
-                          className="w-4 h-4 rounded accent-green-600 cursor-pointer"
-                        />
-                        <span className="text-sm text-gray-600 truncate line-through decoration-green-400">
-                          {p.name}
-                        </span>
-                      </label>
-                    ))}
+                    {hasPitched.map((p) => {
+                      const innings = inningsPitched.get(p.id) || 0;
+                      if (innings > 0) {
+                        return (
+                          <div
+                            key={p.id}
+                            title="Pitched in locked games"
+                            className="flex items-center justify-between px-3 py-2 rounded-lg border border-green-100 bg-green-50"
+                          >
+                            <span className="text-sm text-gray-600 truncate line-through decoration-green-400">
+                              {p.name}
+                            </span>
+                            <span className="ml-2 flex-shrink-0 bg-green-200 text-green-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                              {innings} inn
+                            </span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <label
+                          key={p.id}
+                          className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-green-100 bg-green-50 hover:bg-green-100 transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={true}
+                            onChange={() => handlePitchedToggle(p.id)}
+                            className="w-4 h-4 rounded accent-green-600 cursor-pointer"
+                          />
+                          <span className="text-sm text-gray-600 truncate line-through decoration-green-400">
+                            {p.name}
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -50,7 +50,26 @@ export async function GET(
     gameBallCounts = Object.entries(countMap).map(([playerId, count]) => ({ playerId, count }));
   } catch { /* table may not exist */ }
 
-  return NextResponse.json({ ...filtered, gameBallCounts });
+  // Innings pitched per player across locked games, counting only innings actually played
+  const lockedGames = await prisma.game.findMany({
+    where: { teamId, isLocked: true },
+    select: {
+      inningsPlayed: true,
+      inningsPlanned: true,
+      innings: { where: { position: "P" }, select: { playerId: true, inning: true } },
+    },
+  });
+  const pitchMap: Record<string, number> = {};
+  for (const g of lockedGames) {
+    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
+    for (const i of g.innings) {
+      if (i.inning > maxInning) continue;
+      pitchMap[i.playerId] = (pitchMap[i.playerId] || 0) + 1;
+    }
+  }
+  const pitchingInnings = Object.entries(pitchMap).map(([playerId, count]) => ({ playerId, count }));
+
+  return NextResponse.json({ ...filtered, gameBallCounts, pitchingInnings });
 }
 
 export async function PATCH(

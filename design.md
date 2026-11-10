@@ -188,7 +188,7 @@ This replaces the normal mode's `-seasonCount × 0.3` penalty with positive boos
 
 - **Player form** — 4-column layout: first name, last name, jersey number, batting order. The `name` field is computed from `firstName + lastName`.
 - **Position ratings grid** — Per-position skill ratings (1–9) or DNP (0) for each player
-- **Pitching tracker** — Shows pitching history across games
+- **Pitching tracker** — Shows who has pitched, with innings pitched counted from locked games (only innings actually played). A manual checkbox marks players who pitched outside the app's games.
 - **Game ball tracker** — Two sections: "Needs a game ball" (orange, players who haven't received one) and "Has received" (yellow with count badge). Helps coaches track recognition fairness.
 - **Coach management** (head coach only):
   - **Invite** — Add assistant coaches or viewers by email
