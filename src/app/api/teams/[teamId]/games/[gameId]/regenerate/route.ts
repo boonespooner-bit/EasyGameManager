@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateGamePlan, buildSeasonHistory } from "@/lib/algorithm";
+import { playedAssignments } from "@/lib/playedInnings";
 
 export async function POST(
   req: NextRequest,
@@ -62,12 +63,9 @@ export async function POST(
     where: { teamId, isLocked: true },
     include: { innings: true },
   });
-  const pastAssignments = lockedGames.map((g) => {
-    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
-    return g.innings
-      .filter((i) => i.inning <= maxInning)
-      .map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position }));
-  });
+  const pastAssignments = lockedGames.map((g) =>
+    playedAssignments(g).map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),
+  );
   const seasonHistory = buildSeasonHistory(pastAssignments);
 
   const playersWithRatings = gamePlayers.map((p) => ({

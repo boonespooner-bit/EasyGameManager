@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lastPlayedInning } from "@/lib/playedInnings";
 
 export async function GET(
   _req: NextRequest,
@@ -164,8 +165,7 @@ export async function GET(
     const counts = new Map<string, { playerName: string; count: number }>();
     for (const a of priorBenchAssignments) {
       const pg = priorGameMap.get(a.gameId);
-      const maxInning = pg?.inningsPlayed ?? pg?.inningsPlanned ?? 6;
-      if (a.inning > maxInning) continue;
+      if (pg && a.inning > lastPlayedInning(pg)) continue;
       const playerName = a.player.firstName || a.player.name.split(" ")[0];
       const entry = counts.get(a.player.id) || { playerName, count: 0 };
       entry.count++;

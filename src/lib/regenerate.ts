@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { generateGamePlan, buildSeasonHistory } from "@/lib/algorithm";
+import { playedAssignments } from "@/lib/playedInnings";
 
 // Regenerate the lineup for every unlocked game on the team.
 // Called after any roster mutation (add/edit/delete) so unlocked games reflect
@@ -25,12 +26,9 @@ export async function regenerateFutureGames(teamId: string) {
 
   if (rosterPlayers.length === 0) return;
 
-  const pastAssignments = lockedGames.map((g) => {
-    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
-    return g.innings
-      .filter((i) => i.inning <= maxInning)
-      .map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position }));
-  });
+  const pastAssignments = lockedGames.map((g) =>
+    playedAssignments(g).map((i) => ({ playerId: i.playerId, inning: i.inning, position: i.position })),
+  );
 
   let cumulativeHistory = pastAssignments;
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { countPlayedPositions } from "@/lib/playedInnings";
 
 export async function GET(
   _req: NextRequest,
@@ -50,7 +51,19 @@ export async function GET(
     gameBallCounts = Object.entries(countMap).map(([playerId, count]) => ({ playerId, count }));
   } catch { /* table may not exist */ }
 
-  return NextResponse.json({ ...filtered, gameBallCounts });
+  // Innings pitched per player across locked games, counting only innings actually played
+  const lockedGames = await prisma.game.findMany({
+    where: { teamId, isLocked: true },
+    select: {
+      inningsPlayed: true,
+      inningsPlanned: true,
+      innings: { where: { position: "P" }, select: { playerId: true, inning: true, position: true } },
+    },
+  });
+  const pitchingInnings = Object.entries(countPlayedPositions(lockedGames))
+    .map(([playerId, counts]) => ({ playerId, count: counts.P }));
+
+  return NextResponse.json({ ...filtered, gameBallCounts, pitchingInnings });
 }
 
 export async function PATCH(
