@@ -33,7 +33,9 @@ export async function GET(
   const playerStats: Record<string, Record<string, number>> = {};
   for (const p of players) playerStats[p.id] = {};
   for (const g of games) {
+    const maxInning = g.inningsPlayed ?? g.inningsPlanned ?? 6;
     for (const i of g.innings) {
+      if (i.inning > maxInning) continue;
       if (!playerStats[i.playerId]) continue;
       playerStats[i.playerId][i.position] = (playerStats[i.playerId][i.position] || 0) + 1;
     }
